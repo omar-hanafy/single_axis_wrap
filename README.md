@@ -31,9 +31,13 @@ Add the following to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  single_axis_wrap: ^1.0.1
+  single_axis_wrap: ^1.0.2
 ```
 
+Import the package:
+```dart
+import 'package:single_axis_wrap/single_axis_wrap.dart';
+```
 ## Usage
 
 ### Basic Example

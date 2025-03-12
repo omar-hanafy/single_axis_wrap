@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Organized code and enhanced code documentations.
+
 ## 1.0.1
 
 - Added demo in the readme.
