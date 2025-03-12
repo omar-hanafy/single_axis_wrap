@@ -1,0 +1,27 @@
+name: single_axis_wrap
+description: A Flutter widget that automatically decides between row or column layout based on available space, providing a seamless "all or nothing" layout solution.
+version: 1.0.0
+repository: https://github.com/omar-hanafy/single_axis_wrap
+homepage: https://github.com/omar-hanafy/single_axis_wrap
+topics:
+  - layout
+  - responsive
+  - wrap
+  - single
+  - adaptive
+
+environment:
+  sdk: ^3.0.0
+  flutter: ^3.29.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: 7.0.0
+
+flutter:
+  uses-material-design: true
