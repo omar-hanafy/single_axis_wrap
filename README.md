@@ -12,7 +12,7 @@ A Flutter widget that automatically decides between row or column layout based o
 Unlike Flutter's built-in `Wrap` widget, which can mix horizontal and vertical layouts by wrapping to new lines, `SingleAxisWrap` makes an "all or nothing" layout decision: either all children in a single row, or all children in a single column.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/omar-hanafy/single_axis_wrap/refs/heads/main/assets/demo.gif" width="100%" alt="Cover">
+  <img src="https://raw.githubusercontent.com/omar-hanafy/single_axis_wrap/refs/heads/main/assets/demo.gif" width="60%" alt="Cover">
 </p>
 
 ## Features
