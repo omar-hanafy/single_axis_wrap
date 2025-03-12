@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Added demo in the readme.
+
 ## 1.0.0
 
 ### Initial release
