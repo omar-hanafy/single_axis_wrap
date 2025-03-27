@@ -2,7 +2,7 @@
 
 ## 1.0.2
 
-- Organized code and enhanced code documentations.
+- Organized code and enhanced code documentation.
 
 ## 1.0.1
 
