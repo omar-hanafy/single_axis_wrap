@@ -49,7 +49,7 @@ Add the package to `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  single_axis_wrap: ^1.0.3-dev.1
+  single_axis_wrap: ^1.0.3-dev.2
 ```
 
 Import it:
@@ -277,7 +277,7 @@ Use it only after profiling shows the default strategy is too expensive. It can
 choose differently for children whose intrinsic size differs from their laid-out
 size, such as wrapping `Text`.
 
-`MeasurementStrategy.preferPrimary` is deprecated in `1.0.3-dev.1`. It is equivalent
+`MeasurementStrategy.preferPrimary` is deprecated in `1.0.3-dev.2`. It is equivalent
 to `MeasurementStrategy.layout`, because the default strategy already keeps the
 primary direction when the primary main axis is unbounded.
 
