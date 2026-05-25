@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Refreshed the README with a shorter usage-focused guide and clearer examples.
+
 ## 1.0.3
 
 - Fixed dry layout and real layout parity when the primary direction falls back.
