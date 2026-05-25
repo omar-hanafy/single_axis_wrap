@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.3
+## 1.0.3-dev.1
 
 - Fixed dry layout and real layout parity when the primary direction does not fit.
 - Stabilized intrinsic size calculations so they no longer depend on previous layout state and respect finite opposite-axis queries.
