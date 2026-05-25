@@ -1,15 +1,14 @@
 # Changelog
 
-## 1.0.3-dev.2
+## 1.0.3
 
-- Fixed dry layout and real layout parity when the primary direction does not fit.
-- Stabilized intrinsic size calculations so they no longer depend on previous layout state and respect finite opposite-axis queries.
+- Fixed dry layout and real layout parity when the primary direction falls back.
+- Stabilized intrinsic sizing, including finite opposite-axis queries.
 - Fixed RTL, `verticalDirection`, and single-child `spaceBetween` positioning semantics.
-- Fixed unbounded constraint handling, narrowed `MeasurementStrategy.preferPrimary`, and prevented infinite sizes for space-based alignments.
+- Fixed unbounded constraint handling and finite spacing validation.
 - Deprecated `MeasurementStrategy.preferPrimary`; use `MeasurementStrategy.layout` instead.
-- Tightened spacing validation, direction-change callback delivery, and clip semantics invalidation.
-- Added dry baseline and approximate paint clip support.
-- Expanded render-contract test coverage and clarified layout decision documentation.
+- Improved direction-change callback delivery, dry baseline support, and clipping semantics.
+- Clarified layout decisions, constraints, `maintainLayout`, callbacks, and measurement strategies in the docs.
 
 ## 1.0.2
 

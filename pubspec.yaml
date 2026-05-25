@@ -1,6 +1,6 @@
 name: single_axis_wrap
 description: A Flutter widget that chooses one complete row or column based on available space.
-version: 1.0.3-dev.2
+version: 1.0.3
 repository: https://github.com/omar-hanafy/single_axis_wrap
 homepage: https://github.com/omar-hanafy/single_axis_wrap
 topics:
