@@ -1,27 +1,44 @@
-// ignore_for_file: no_leading_underscores_for_local_identifiers, unnecessary_getters_setters
+// ignore_for_file: prefer_initializing_formals, unnecessary_getters_setters
 
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../single_axis_wrap.dart';
+import 'package:single_axis_wrap/src/single_axis_wrap_types.dart';
 
-/// Parent data for [RenderSingleAxisWrap].
+/// Stores the physical paint offset assigned by [RenderSingleAxisWrap].
+///
+/// Each child receives this data during layout. Consumers normally interact
+/// with `SingleAxisWrap` instead of reading this class directly.
 class SingleAxisWrapParentData extends ContainerBoxParentData<RenderBox> {
   @override
   String toString() => 'offset=$offset';
 }
 
-/// Render object for [SingleAxisWrap] that performs the "all or nothing" layout.
+/// Render object that chooses either one row or one column for all children.
 ///
-/// It first attempts to lay out the children in the [primaryDirection]. If that
-/// exceeds the available space, it switches to the perpendicular direction.
+/// The object first measures [primaryDirection]. If the primary main axis is
+/// finite and the children plus spacing do not fit, it lays out the opposite
+/// axis instead.
+///
+/// Dry layout and dry baselines use the same axis decision as [performLayout].
+/// Intrinsic dimensions use the maintained direction when locked. Otherwise
+/// minimum intrinsic values expose the compact fallback shape where that axis
+/// can shrink, while maximum values keep the preferred all-in-primary-axis
+/// shape. Queries that provide the primary main-axis limit still reproduce
+/// fallback from that limit.
+///
+/// Prefer using `SingleAxisWrap` unless you are composing render objects
+/// directly.
 class RenderSingleAxisWrap extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, SingleAxisWrapParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, SingleAxisWrapParentData> {
-  /// Creates a [RenderSingleAxisWrap] render object.
+  /// Creates the render object used by `SingleAxisWrap`.
+  ///
+  /// The widget resolves nullable configuration before constructing this
+  /// object. In particular, [textDirection] must already be non-null.
   RenderSingleAxisWrap({
     required Axis primaryDirection,
     required double spacing,
@@ -38,71 +55,102 @@ class RenderSingleAxisWrap extends RenderBox
     required bool maintainLayout,
     required MeasurementStrategy measurementStrategy,
     List<RenderBox>? children,
-  })  : _primaryDirection = primaryDirection,
-        _spacing = spacing,
-        _horizontalSpacing = horizontalSpacing,
-        _verticalSpacing = verticalSpacing,
-        _horizontalAlignment = horizontalAlignment,
-        _verticalAlignment = verticalAlignment,
-        _horizontalCrossAxisAlignment = horizontalCrossAxisAlignment,
-        _verticalCrossAxisAlignment = verticalCrossAxisAlignment,
-        _textDirection = textDirection,
-        _verticalDirection = verticalDirection,
-        _clipBehavior = clipBehavior,
-        _onLayoutDirectionChanged = onLayoutDirectionChanged,
-        _maintainLayout = maintainLayout,
-        _measurementStrategy = measurementStrategy {
+  }) : assert(
+         spacing >= 0.0 && spacing.isFinite,
+         'Spacing must be finite and non-negative',
+       ),
+       assert(
+         horizontalSpacing == null ||
+             (horizontalSpacing >= 0.0 && horizontalSpacing.isFinite),
+         'Horizontal spacing must be finite and non-negative',
+       ),
+       assert(
+         verticalSpacing == null ||
+             (verticalSpacing >= 0.0 && verticalSpacing.isFinite),
+         'Vertical spacing must be finite and non-negative',
+       ),
+       _primaryDirection = primaryDirection,
+       _spacing = spacing,
+       _horizontalSpacing = horizontalSpacing,
+       _verticalSpacing = verticalSpacing,
+       _horizontalAlignment = horizontalAlignment,
+       _verticalAlignment = verticalAlignment,
+       _horizontalCrossAxisAlignment = horizontalCrossAxisAlignment,
+       _verticalCrossAxisAlignment = verticalCrossAxisAlignment,
+       _textDirection = textDirection,
+       _verticalDirection = verticalDirection,
+       _clipBehavior = clipBehavior,
+       _onLayoutDirectionChanged = onLayoutDirectionChanged,
+       _maintainLayout = maintainLayout,
+       _measurementStrategy = measurementStrategy {
     addAll(children);
   }
 
-  /// The primary layout direction to attempt first.
+  /// The layout axis measured before the fallback axis.
+  ///
+  /// Changing this resets the maintained direction, because the existing lock
+  /// may no longer match the caller's preferred layout.
   Axis get primaryDirection => _primaryDirection;
   Axis _primaryDirection;
 
   set primaryDirection(Axis value) {
     if (_primaryDirection == value) return;
     _primaryDirection = value;
-    // Reset the chosen layout when primary direction changes
     _currentLayoutDirection = null;
     markNeedsLayout();
   }
 
-  /// The default spacing between children in both layouts.
+  /// Default non-negative gap between adjacent children.
+  ///
+  /// Used when [horizontalSpacing] or [verticalSpacing] is null.
   double get spacing => _spacing;
   double _spacing;
 
   set spacing(double value) {
-    assert(value >= 0.0, 'Spacing must be non-negative');
+    assert(
+      value >= 0.0 && value.isFinite,
+      'Spacing must be finite and non-negative',
+    );
     if (_spacing == value) return;
     _spacing = value;
     markNeedsLayout();
   }
 
-  /// Spacing between children when in horizontal (row) layout.
+  /// Horizontal-layout gap between adjacent children.
+  ///
+  /// A null value falls back to [spacing]. Non-null values must be
+  /// non-negative.
   double? get horizontalSpacing => _horizontalSpacing;
   double? _horizontalSpacing;
 
   set horizontalSpacing(double? value) {
-    assert(value == null || value >= 0.0,
-        'Horizontal spacing must be non-negative');
+    assert(
+      value == null || (value >= 0.0 && value.isFinite),
+      'Horizontal spacing must be finite and non-negative',
+    );
     if (_horizontalSpacing == value) return;
     _horizontalSpacing = value;
     markNeedsLayout();
   }
 
-  /// Spacing between children when in vertical (column) layout.
+  /// Vertical-layout gap between adjacent children.
+  ///
+  /// A null value falls back to [spacing]. Non-null values must be
+  /// non-negative.
   double? get verticalSpacing => _verticalSpacing;
   double? _verticalSpacing;
 
   set verticalSpacing(double? value) {
     assert(
-        value == null || value >= 0.0, 'Vertical spacing must be non-negative');
+      value == null || (value >= 0.0 && value.isFinite),
+      'Vertical spacing must be finite and non-negative',
+    );
     if (_verticalSpacing == value) return;
     _verticalSpacing = value;
     markNeedsLayout();
   }
 
-  /// Alignment of children along the main axis when in horizontal (row) layout.
+  /// Main-axis alignment when the chosen direction is [Axis.horizontal].
   WrapAlignment get horizontalAlignment => _horizontalAlignment;
   WrapAlignment _horizontalAlignment;
 
@@ -112,7 +160,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Alignment of children along the main axis when in vertical (column) layout.
+  /// Main-axis alignment when the chosen direction is [Axis.vertical].
   WrapAlignment get verticalAlignment => _verticalAlignment;
   WrapAlignment _verticalAlignment;
 
@@ -122,7 +170,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Alignment of children along the cross axis when in horizontal (row) layout.
+  /// Cross-axis alignment when the chosen direction is [Axis.horizontal].
   WrapCrossAlignment get horizontalCrossAxisAlignment =>
       _horizontalCrossAxisAlignment;
   WrapCrossAlignment _horizontalCrossAxisAlignment;
@@ -133,7 +181,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Alignment of children along the cross axis when in vertical (column) layout.
+  /// Cross-axis alignment when the chosen direction is [Axis.vertical].
   WrapCrossAlignment get verticalCrossAxisAlignment =>
       _verticalCrossAxisAlignment;
   WrapCrossAlignment _verticalCrossAxisAlignment;
@@ -144,7 +192,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Text direction for horizontal layouts.
+  /// Text direction used to resolve horizontal order and start/end alignment.
   TextDirection get textDirection => _textDirection;
   TextDirection _textDirection;
 
@@ -154,7 +202,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Vertical direction for vertical layouts.
+  /// Vertical direction used to resolve vertical order and start/end alignment.
   VerticalDirection get verticalDirection => _verticalDirection;
   VerticalDirection _verticalDirection;
 
@@ -164,7 +212,7 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  /// Clip behavior for children that exceed the container bounds.
+  /// Paint clipping behavior applied only when visual overflow exists.
   Clip get clipBehavior => _clipBehavior;
   Clip _clipBehavior;
 
@@ -172,9 +220,14 @@ class RenderSingleAxisWrap extends RenderBox
     if (_clipBehavior == value) return;
     _clipBehavior = value;
     markNeedsPaint();
+    markNeedsSemanticsUpdate();
   }
 
-  /// Callback for when layout direction changes.
+  /// Callback scheduled after the chosen layout direction changes.
+  ///
+  /// The callback is not invoked for the first layout. Pending notifications
+  /// are coalesced within a frame and call the latest callback assigned before
+  /// the post-frame notification runs.
   LayoutDirectionCallback? get onLayoutDirectionChanged =>
       _onLayoutDirectionChanged;
   LayoutDirectionCallback? _onLayoutDirectionChanged;
@@ -183,7 +236,10 @@ class RenderSingleAxisWrap extends RenderBox
     _onLayoutDirectionChanged = value;
   }
 
-  /// Whether to maintain the current layout once chosen.
+  /// Whether the first chosen direction should be reused on later layouts.
+  ///
+  /// Disabling this clears the lock so the next layout can choose from current
+  /// constraints again.
   bool get maintainLayout => _maintainLayout;
   bool _maintainLayout;
 
@@ -191,13 +247,12 @@ class RenderSingleAxisWrap extends RenderBox
     if (_maintainLayout == value) return;
     _maintainLayout = value;
     if (!value) {
-      // Reset the chosen layout when maintainLayout is disabled
       _currentLayoutDirection = null;
     }
     markNeedsLayout();
   }
 
-  /// Strategy for measuring children during layout decisions.
+  /// Measurement strategy used while deciding whether the primary axis fits.
   MeasurementStrategy get measurementStrategy => _measurementStrategy;
   MeasurementStrategy _measurementStrategy;
 
@@ -207,10 +262,12 @@ class RenderSingleAxisWrap extends RenderBox
     markNeedsLayout();
   }
 
-  // The currently chosen layout direction
+  // `_currentLayoutDirection` powers maintainLayout. `_lastLaidOutDirection`
+  // is kept separate so resetting the lock does not suppress change callbacks.
   Axis? _currentLayoutDirection;
+  Axis? _lastLaidOutDirection;
+  int _directionNotificationGeneration = 0;
 
-  // Layer handle for clipping
   final LayerHandle<ClipRectLayer> _clipRectLayer =
       LayerHandle<ClipRectLayer>();
   bool _hasVisualOverflow = false;
@@ -222,220 +279,348 @@ class RenderSingleAxisWrap extends RenderBox
     }
   }
 
-  /// Gets the appropriate spacing based on the layout direction.
+  Axis get _fallbackDirection =>
+      primaryDirection == Axis.horizontal ? Axis.vertical : Axis.horizontal;
+
   double _getSpacingForDirection(Axis direction) {
     return direction == Axis.horizontal
         ? horizontalSpacing ?? spacing
         : verticalSpacing ?? spacing;
   }
 
-  /// Gets the appropriate alignment based on the layout direction.
   WrapAlignment _getAlignmentForDirection(Axis direction) {
     return direction == Axis.horizontal
         ? horizontalAlignment
         : verticalAlignment;
   }
 
-  /// Gets the appropriate cross-axis alignment based on the layout direction.
   WrapCrossAlignment _getCrossAlignmentForDirection(Axis direction) {
     return direction == Axis.horizontal
         ? horizontalCrossAxisAlignment
         : verticalCrossAxisAlignment;
   }
 
+  BoxConstraints _childConstraintsFor(
+    Axis direction,
+    BoxConstraints constraints,
+  ) {
+    return direction == Axis.horizontal
+        ? BoxConstraints(maxHeight: constraints.maxHeight)
+        : BoxConstraints(maxWidth: constraints.maxWidth);
+  }
+
+  double _maxMainAxisExtent(Axis direction, BoxConstraints constraints) {
+    return direction == Axis.horizontal
+        ? constraints.maxWidth
+        : constraints.maxHeight;
+  }
+
+  double _constrainMainAxisExtent(
+    Axis direction,
+    BoxConstraints constraints,
+    double value,
+  ) {
+    return direction == Axis.horizontal
+        ? constraints.constrainWidth(value)
+        : constraints.constrainHeight(value);
+  }
+
+  double _constrainCrossAxisExtent(
+    Axis direction,
+    BoxConstraints constraints,
+    double value,
+  ) {
+    return direction == Axis.horizontal
+        ? constraints.constrainHeight(value)
+        : constraints.constrainWidth(value);
+  }
+
+  Size _sizeForAxisExtents(
+    Axis direction,
+    double mainAxisExtent,
+    double crossAxisExtent,
+  ) {
+    return direction == Axis.horizontal
+        ? Size(mainAxisExtent, crossAxisExtent)
+        : Size(crossAxisExtent, mainAxisExtent);
+  }
+
+  double _mainAxisExtent(Axis direction, Size size) {
+    return direction == Axis.horizontal ? size.width : size.height;
+  }
+
+  double _crossAxisExtent(Axis direction, Size size) {
+    return direction == Axis.horizontal ? size.height : size.width;
+  }
+
+  bool _alignmentExpandsMainAxis(WrapAlignment alignment) {
+    return alignment == WrapAlignment.spaceBetween ||
+        alignment == WrapAlignment.spaceAround ||
+        alignment == WrapAlignment.spaceEvenly;
+  }
+
+  bool _preferPrimaryForUnboundedConstraints(BoxConstraints constraints) {
+    // Keep supporting the deprecated value until the next breaking release.
+    // ignore: deprecated_member_use_from_same_package
+    return measurementStrategy == MeasurementStrategy.preferPrimary &&
+        !_maxMainAxisExtent(primaryDirection, constraints).isFinite;
+  }
+
   @override
   double computeMinIntrinsicWidth(double height) {
-    if (childCount == 0) {
-      return 0.0;
-    }
-
-    // In horizontal layout, it's the width of the widest child
-    // In vertical layout, it's the sum of all children's min widths
-    if (_currentLayoutDirection == Axis.vertical) {
-      var maxWidth = 0.0;
-      var child = firstChild;
-      while (child != null) {
-        maxWidth =
-            math.max(maxWidth, child.getMinIntrinsicWidth(double.infinity));
-        child = childAfter(child);
-      }
-      return maxWidth;
-    } else {
-      // Default to horizontal layout or calculate based on primary direction if unset
-      if (_currentLayoutDirection == null &&
-          primaryDirection == Axis.vertical) {
-        // For primary vertical, calculate as if vertical
-        var maxWidth = 0.0;
-        var child = firstChild;
-        while (child != null) {
-          maxWidth =
-              math.max(maxWidth, child.getMinIntrinsicWidth(double.infinity));
-          child = childAfter(child);
-        }
-        return maxWidth;
-      } else {
-        // Calculate as if horizontal
-        var totalWidth = 0.0;
-        var child = firstChild;
-        final horizontalSpace = _getSpacingForDirection(Axis.horizontal);
-        var isFirst = true;
-
-        while (child != null) {
-          if (!isFirst) totalWidth += horizontalSpace;
-          totalWidth += child.getMinIntrinsicWidth(double.infinity);
-          isFirst = false;
-          child = childAfter(child);
-        }
-        return totalWidth;
-      }
-    }
+    return _computeIntrinsicWidth(_IntrinsicExtent.min, height);
   }
 
   @override
   double computeMaxIntrinsicWidth(double height) {
-    if (childCount == 0) {
-      return 0.0;
-    }
-
-    // Similar logic to min intrinsic width but use max intrinsic width of children
-    if (_currentLayoutDirection == Axis.vertical) {
-      var maxWidth = 0.0;
-      var child = firstChild;
-      while (child != null) {
-        maxWidth =
-            math.max(maxWidth, child.getMaxIntrinsicWidth(double.infinity));
-        child = childAfter(child);
-      }
-      return maxWidth;
-    } else {
-      // Default to horizontal layout or calculate based on primary direction if unset
-      if (_currentLayoutDirection == null &&
-          primaryDirection == Axis.vertical) {
-        // For primary vertical, calculate as if vertical
-        var maxWidth = 0.0;
-        var child = firstChild;
-        while (child != null) {
-          maxWidth =
-              math.max(maxWidth, child.getMaxIntrinsicWidth(double.infinity));
-          child = childAfter(child);
-        }
-        return maxWidth;
-      } else {
-        // Calculate as if horizontal
-        var totalWidth = 0.0;
-        var child = firstChild;
-        final horizontalSpace = _getSpacingForDirection(Axis.horizontal);
-        var isFirst = true;
-
-        while (child != null) {
-          if (!isFirst) totalWidth += horizontalSpace;
-          totalWidth += child.getMaxIntrinsicWidth(double.infinity);
-          isFirst = false;
-          child = childAfter(child);
-        }
-        return totalWidth;
-      }
-    }
+    return _computeIntrinsicWidth(_IntrinsicExtent.max, height);
   }
 
   @override
   double computeMinIntrinsicHeight(double width) {
-    if (childCount == 0) {
-      return 0.0;
-    }
-
-    // In vertical layout, it's the height of the tallest child
-    // In horizontal layout, it's the sum of all children's min heights
-    if (_currentLayoutDirection == Axis.horizontal) {
-      var maxHeight = 0.0;
-      var child = firstChild;
-      while (child != null) {
-        maxHeight =
-            math.max(maxHeight, child.getMinIntrinsicHeight(double.infinity));
-        child = childAfter(child);
-      }
-      return maxHeight;
-    } else {
-      // Default to vertical layout or calculate based on primary direction if unset
-      if (_currentLayoutDirection == null &&
-          primaryDirection == Axis.horizontal) {
-        // For primary horizontal, calculate as if horizontal
-        var maxHeight = 0.0;
-        var child = firstChild;
-        while (child != null) {
-          maxHeight =
-              math.max(maxHeight, child.getMinIntrinsicHeight(double.infinity));
-          child = childAfter(child);
-        }
-        return maxHeight;
-      } else {
-        // Calculate as if vertical
-        var totalHeight = 0.0;
-        var child = firstChild;
-        final verticalSpace = _getSpacingForDirection(Axis.vertical);
-        var isFirst = true;
-
-        while (child != null) {
-          if (!isFirst) totalHeight += verticalSpace;
-          totalHeight += child.getMinIntrinsicHeight(double.infinity);
-          isFirst = false;
-          child = childAfter(child);
-        }
-        return totalHeight;
-      }
-    }
+    return _computeIntrinsicHeight(_IntrinsicExtent.min, width);
   }
 
   @override
   double computeMaxIntrinsicHeight(double width) {
+    return _computeIntrinsicHeight(_IntrinsicExtent.max, width);
+  }
+
+  double _computeIntrinsicWidth(_IntrinsicExtent extent, double height) {
     if (childCount == 0) {
       return 0.0;
     }
 
-    // Similar logic to min intrinsic height but use max intrinsic height of children
-    if (_currentLayoutDirection == Axis.horizontal) {
-      var maxHeight = 0.0;
-      var child = firstChild;
-      while (child != null) {
-        maxHeight =
-            math.max(maxHeight, child.getMaxIntrinsicHeight(double.infinity));
-        child = childAfter(child);
-      }
-      return maxHeight;
-    } else {
-      // Default to vertical layout or calculate based on primary direction if unset
-      if (_currentLayoutDirection == null &&
-          primaryDirection == Axis.horizontal) {
-        // For primary horizontal, calculate as if horizontal
-        var maxHeight = 0.0;
-        var child = firstChild;
-        while (child != null) {
-          maxHeight =
-              math.max(maxHeight, child.getMaxIntrinsicHeight(double.infinity));
-          child = childAfter(child);
-        }
-        return maxHeight;
-      } else {
-        // Calculate as if vertical
-        var totalHeight = 0.0;
-        var child = firstChild;
-        final verticalSpace = _getSpacingForDirection(Axis.vertical);
-        var isFirst = true;
+    final direction = _resolveIntrinsicWidthDirection(extent, height);
+    return _intrinsicWidthForDirection(direction, extent, height);
+  }
 
-        while (child != null) {
-          if (!isFirst) totalHeight += verticalSpace;
-          totalHeight += child.getMaxIntrinsicHeight(double.infinity);
-          isFirst = false;
-          child = childAfter(child);
-        }
-        return totalHeight;
-      }
+  double _computeIntrinsicHeight(_IntrinsicExtent extent, double width) {
+    if (childCount == 0) {
+      return 0.0;
     }
+
+    final direction = _resolveIntrinsicHeightDirection(extent, width);
+    return _intrinsicHeightForDirection(direction, extent, width);
+  }
+
+  double _intrinsicWidthForDirection(
+    Axis direction,
+    _IntrinsicExtent extent,
+    double height,
+  ) {
+    return direction == Axis.horizontal
+        ? _computeIntrinsicMainAxisExtent(direction, extent, height)
+        : _computeIntrinsicCrossAxisExtent(direction, extent, double.infinity);
+  }
+
+  double _intrinsicHeightForDirection(
+    Axis direction,
+    _IntrinsicExtent extent,
+    double width,
+  ) {
+    return direction == Axis.horizontal
+        ? _computeIntrinsicCrossAxisExtent(direction, extent, double.infinity)
+        : _computeIntrinsicMainAxisExtent(direction, extent, width);
+  }
+
+  Axis _resolveIntrinsicWidthDirection(_IntrinsicExtent extent, double height) {
+    if (maintainLayout && _currentLayoutDirection != null) {
+      return _currentLayoutDirection!;
+    }
+
+    if (primaryDirection == Axis.horizontal) {
+      if (extent == _IntrinsicExtent.max) {
+        return Axis.horizontal;
+      }
+
+      final fallbackRequiredHeight = _computeIntrinsicMainAxisExtent(
+        Axis.vertical,
+        _IntrinsicExtent.max,
+        double.infinity,
+      );
+      return !height.isFinite || fallbackRequiredHeight <= height
+          ? Axis.vertical
+          : Axis.horizontal;
+    }
+
+    if (primaryDirection == Axis.vertical) {
+      final constraints = BoxConstraints(maxHeight: height);
+      return _fitsUsingIntrinsics(Axis.vertical, constraints)
+          ? Axis.vertical
+          : Axis.horizontal;
+    }
+
+    return primaryDirection;
+  }
+
+  Axis _resolveIntrinsicHeightDirection(_IntrinsicExtent extent, double width) {
+    if (maintainLayout && _currentLayoutDirection != null) {
+      return _currentLayoutDirection!;
+    }
+
+    if (primaryDirection == Axis.horizontal) {
+      final constraints = BoxConstraints(maxWidth: width);
+      return _fitsUsingIntrinsics(Axis.horizontal, constraints)
+          ? Axis.horizontal
+          : Axis.vertical;
+    }
+
+    if (primaryDirection == Axis.vertical) {
+      if (extent == _IntrinsicExtent.max) {
+        return Axis.vertical;
+      }
+
+      final fallbackRequiredWidth = _computeIntrinsicMainAxisExtent(
+        Axis.horizontal,
+        _IntrinsicExtent.max,
+        double.infinity,
+      );
+      return !width.isFinite || fallbackRequiredWidth <= width
+          ? Axis.horizontal
+          : Axis.vertical;
+    }
+
+    return primaryDirection;
+  }
+
+  double _computeIntrinsicMainAxisExtent(
+    Axis direction,
+    _IntrinsicExtent extent,
+    double crossAxisExtent,
+  ) {
+    final spacing = _getSpacingForDirection(direction);
+    var total = 0.0;
+    var isFirst = true;
+
+    var child = firstChild;
+    while (child != null) {
+      if (!isFirst) {
+        total += spacing;
+      }
+      total += _childIntrinsicMainAxisExtent(
+        child,
+        direction,
+        extent,
+        crossAxisExtent,
+      );
+      isFirst = false;
+      child = childAfter(child);
+    }
+
+    return total;
+  }
+
+  double _computeIntrinsicCrossAxisExtent(
+    Axis direction,
+    _IntrinsicExtent extent,
+    double mainAxisExtent,
+  ) {
+    var maxExtent = 0.0;
+
+    var child = firstChild;
+    while (child != null) {
+      maxExtent = math.max(
+        maxExtent,
+        _childIntrinsicCrossAxisExtent(
+          child,
+          direction,
+          extent,
+          mainAxisExtent,
+        ),
+      );
+      child = childAfter(child);
+    }
+
+    return maxExtent;
+  }
+
+  double _childIntrinsicMainAxisExtent(
+    RenderBox child,
+    Axis direction,
+    _IntrinsicExtent extent,
+    double crossAxisExtent,
+  ) {
+    return switch ((direction, extent)) {
+      (Axis.horizontal, _IntrinsicExtent.min) => child.getMinIntrinsicWidth(
+        crossAxisExtent,
+      ),
+      (Axis.horizontal, _IntrinsicExtent.max) => child.getMaxIntrinsicWidth(
+        crossAxisExtent,
+      ),
+      (Axis.vertical, _IntrinsicExtent.min) => child.getMinIntrinsicHeight(
+        crossAxisExtent,
+      ),
+      (Axis.vertical, _IntrinsicExtent.max) => child.getMaxIntrinsicHeight(
+        crossAxisExtent,
+      ),
+    };
+  }
+
+  double _childIntrinsicCrossAxisExtent(
+    RenderBox child,
+    Axis direction,
+    _IntrinsicExtent extent,
+    double mainAxisExtent,
+  ) {
+    return switch ((direction, extent)) {
+      (Axis.horizontal, _IntrinsicExtent.min) => child.getMinIntrinsicHeight(
+        mainAxisExtent,
+      ),
+      (Axis.horizontal, _IntrinsicExtent.max) => child.getMaxIntrinsicHeight(
+        mainAxisExtent,
+      ),
+      (Axis.vertical, _IntrinsicExtent.min) => child.getMinIntrinsicWidth(
+        mainAxisExtent,
+      ),
+      (Axis.vertical, _IntrinsicExtent.max) => child.getMaxIntrinsicWidth(
+        mainAxisExtent,
+      ),
+    };
   }
 
   @override
   double? computeDistanceToActualBaseline(TextBaseline baseline) {
-    return defaultComputeDistanceToHighestActualBaseline(baseline);
+    return switch (_lastLaidOutDirection ?? _currentLayoutDirection) {
+      Axis.vertical => defaultComputeDistanceToFirstActualBaseline(baseline),
+      Axis.horizontal ||
+      null => defaultComputeDistanceToHighestActualBaseline(baseline),
+    };
+  }
+
+  @override
+  double? computeDryBaseline(
+    BoxConstraints constraints,
+    TextBaseline baseline,
+  ) {
+    if (childCount == 0) {
+      return null;
+    }
+
+    final metrics = _resolveDryMetrics(constraints, collectChildren: true);
+    final containerSize = _computeContainerSize(metrics, constraints);
+
+    double? result;
+    for (final childLayout in _positionDryChildren(metrics, containerSize)) {
+      final childBaseline = childLayout.child.getDryBaseline(
+        childLayout.constraints,
+        baseline,
+      );
+      if (childBaseline == null) {
+        continue;
+      }
+
+      final baselineOffset = childLayout.offset.dy + childBaseline;
+      if (metrics.direction == Axis.vertical) {
+        return baselineOffset;
+      }
+
+      result = result == null
+          ? baselineOffset
+          : math.min(result, baselineOffset);
+    }
+
+    return result;
   }
 
   @override
@@ -444,75 +629,126 @@ class RenderSingleAxisWrap extends RenderBox
       return constraints.smallest;
     }
 
-    // For dry layout, use the logic from determineLayoutDirection to estimate
-    // which direction we'd use, but don't update _currentLayoutDirection
-    final directionToUse = _estimateLayoutDirection(constraints);
-
-    // Simplified calculation based on estimated direction
-    if (directionToUse == Axis.horizontal) {
-      var maxHeight = 0.0;
-      var totalWidth = 0.0;
-      var isFirst = true;
-      final spacing = _getSpacingForDirection(Axis.horizontal);
-
-      var child = firstChild;
-      while (child != null) {
-        final childSize = child
-            .getDryLayout(BoxConstraints(maxHeight: constraints.maxHeight));
-        if (!isFirst) totalWidth += spacing;
-        totalWidth += childSize.width;
-        maxHeight = math.max(maxHeight, childSize.height);
-        isFirst = false;
-        child = childAfter(child);
-      }
-
-      return Size(constraints.constrainWidth(totalWidth),
-          constraints.constrainHeight(maxHeight));
-    } else {
-      var maxWidth = 0.0;
-      var totalHeight = 0.0;
-      var isFirst = true;
-      final spacing = _getSpacingForDirection(Axis.vertical);
-
-      var child = firstChild;
-      while (child != null) {
-        final childSize =
-            child.getDryLayout(BoxConstraints(maxWidth: constraints.maxWidth));
-        if (!isFirst) totalHeight += spacing;
-        totalHeight += childSize.height;
-        maxWidth = math.max(maxWidth, childSize.width);
-        isFirst = false;
-        child = childAfter(child);
-      }
-
-      return Size(constraints.constrainWidth(maxWidth),
-          constraints.constrainHeight(totalHeight));
-    }
+    final metrics = _resolveDryMetrics(constraints);
+    return _computeContainerSize(metrics, constraints);
   }
 
-  Axis _estimateLayoutDirection(BoxConstraints constraints) {
-    final hasBoundedWidth = constraints.maxWidth.isFinite;
-    final hasBoundedHeight = constraints.maxHeight.isFinite;
-
-    if (measurementStrategy == MeasurementStrategy.preferPrimary) {
-      return primaryDirection;
+  _LayoutMetrics _resolveDryMetrics(
+    BoxConstraints constraints, {
+    bool collectChildren = false,
+  }) {
+    // Dry layout must choose the same axis as real layout without mutating the
+    // maintained direction or child parent data.
+    if (maintainLayout && _currentLayoutDirection != null) {
+      return _measureDry(
+        _currentLayoutDirection!,
+        constraints,
+        collectChildren: collectChildren,
+      );
     }
 
-    if (!hasBoundedWidth && !hasBoundedHeight) {
-      return primaryDirection;
+    if (_preferPrimaryForUnboundedConstraints(constraints)) {
+      return _measureDry(
+        primaryDirection,
+        constraints,
+        collectChildren: collectChildren,
+      );
     }
 
-    // If only one dimension is bounded, prefer that direction
-    if (hasBoundedWidth && !hasBoundedHeight) {
-      return Axis.horizontal;
+    if (measurementStrategy == MeasurementStrategy.intrinsic) {
+      final direction = _fitsUsingIntrinsics(primaryDirection, constraints)
+          ? primaryDirection
+          : _fallbackDirection;
+      return _measureDry(
+        direction,
+        constraints,
+        collectChildren: collectChildren,
+      );
     }
 
-    if (!hasBoundedWidth && hasBoundedHeight) {
-      return Axis.vertical;
+    final primaryMetrics = _measureDry(
+      primaryDirection,
+      constraints,
+      collectChildren: collectChildren,
+    );
+    if (_fitsInDirection(primaryMetrics, constraints)) {
+      return primaryMetrics;
     }
 
-    // Otherwise use primary direction as an estimate
-    return primaryDirection;
+    return _measureDry(
+      _fallbackDirection,
+      constraints,
+      collectChildren: collectChildren,
+    );
+  }
+
+  bool _fitsUsingIntrinsics(Axis direction, BoxConstraints constraints) {
+    final maxMainAxisExtent = _maxMainAxisExtent(direction, constraints);
+    if (!maxMainAxisExtent.isFinite) {
+      return true;
+    }
+
+    final crossAxisExtent = direction == Axis.horizontal
+        ? constraints.maxHeight
+        : constraints.maxWidth;
+    final requiredMainAxisExtent = _computeIntrinsicMainAxisExtent(
+      direction,
+      _IntrinsicExtent.max,
+      crossAxisExtent,
+    );
+
+    return requiredMainAxisExtent <= maxMainAxisExtent;
+  }
+
+  _LayoutMetrics _measureDry(
+    Axis direction,
+    BoxConstraints constraints, {
+    bool collectChildren = false,
+  }) {
+    // Dry metrics keep the child constraints used for each dry size so baseline
+    // queries can later ask the child with the exact same inputs.
+    final childConstraints = _childConstraintsFor(direction, constraints);
+    final dryChildren = collectChildren ? <_DryChildLayout>[] : null;
+    var childrenMainAxisExtent = 0.0;
+    var maxCrossAxisExtent = 0.0;
+    var measuredChildCount = 0;
+
+    var child = firstChild;
+    while (child != null) {
+      final childSize = child.getDryLayout(childConstraints);
+      dryChildren?.add(
+        _DryChildLayout(
+          child: child,
+          constraints: childConstraints,
+          size: childSize,
+        ),
+      );
+      childrenMainAxisExtent += _mainAxisExtent(direction, childSize);
+      maxCrossAxisExtent = math.max(
+        maxCrossAxisExtent,
+        _crossAxisExtent(direction, childSize),
+      );
+      measuredChildCount++;
+      child = childAfter(child);
+    }
+
+    return _LayoutMetrics(
+      direction: direction,
+      childCount: measuredChildCount,
+      childrenMainAxisExtent: childrenMainAxisExtent,
+      maxCrossAxisExtent: maxCrossAxisExtent,
+      spacing: _getSpacingForDirection(direction),
+      dryChildren: dryChildren,
+    );
+  }
+
+  bool _fitsInDirection(_LayoutMetrics metrics, BoxConstraints constraints) {
+    final maxMainAxisExtent = _maxMainAxisExtent(
+      metrics.direction,
+      constraints,
+    );
+    return !maxMainAxisExtent.isFinite ||
+        metrics.totalMainAxisExtent <= maxMainAxisExtent;
   }
 
   @override
@@ -520,482 +756,302 @@ class RenderSingleAxisWrap extends RenderBox
     if (childCount == 0) {
       size = constraints.smallest;
       _hasVisualOverflow = false;
+      _lastLaidOutDirection = null;
+      _directionNotificationGeneration++;
       return;
     }
 
-    // If we're maintaining the current layout and already have one, use it
-    if (maintainLayout && _currentLayoutDirection != null) {
-      _layoutWithDirection(_currentLayoutDirection!);
-      return;
-    }
+    final lockedDirection = maintainLayout ? _currentLayoutDirection : null;
+    final metrics = lockedDirection != null
+        ? _measureWet(lockedDirection)
+        : _layoutWithResolvedDirection();
 
-    // Determine the layout direction using the improved method
-    final directionToUse = _determineLayoutDirection();
-
-    // Notify if direction changes
-    if (_currentLayoutDirection != directionToUse) {
-      final oldDirection = _currentLayoutDirection;
-      final newDirection = directionToUse;
-      _currentLayoutDirection = directionToUse;
-
-      if (oldDirection != null && onLayoutDirectionChanged != null) {
-        // Use post-frame callback to avoid "build scheduled during frame" errors
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          onLayoutDirectionChanged!(newDirection);
-        });
-      }
-    }
-
-    // Perform the actual layout with the chosen direction
-    _layoutWithDirection(directionToUse);
+    _commitLayout(metrics);
+    _currentLayoutDirection = metrics.direction;
+    _notifyDirectionChanged(metrics.direction);
   }
 
-  Axis _determineLayoutDirection() {
-    final hasBoundedWidth = constraints.maxWidth.isFinite;
-    final hasBoundedHeight = constraints.maxHeight.isFinite;
-
-    // Handle cases based on measurement strategy
-    if (measurementStrategy == MeasurementStrategy.preferPrimary) {
-      return primaryDirection;
+  _LayoutMetrics _layoutWithResolvedDirection() {
+    // The default strategy intentionally performs a real primary layout first.
+    // If it fits, those child sizes are reused and no second layout pass occurs.
+    if (_preferPrimaryForUnboundedConstraints(constraints)) {
+      return _measureWet(primaryDirection);
     }
 
-    // Handle cases when both directions are unbounded
-    if (!hasBoundedWidth && !hasBoundedHeight) {
-      return primaryDirection;
-    }
-
-    // Handle cases based on primary direction and constraints
-    if (primaryDirection == Axis.horizontal) {
-      if (hasBoundedWidth) {
-        // Check if all children fit horizontally
-        final fitsHorizontally = _tryLayoutInDirection(Axis.horizontal);
-        return fitsHorizontally ? Axis.horizontal : Axis.vertical;
-      } else if (hasBoundedHeight) {
-        // Width is unbounded, height is bounded: prefer vertical
-        return Axis.vertical;
-      } else {
-        // Both unbounded: default to primary direction
-        return primaryDirection;
-      }
-    } else {
-      // Primary direction is vertical
-      if (hasBoundedHeight) {
-        // Check if all children fit vertically
-        final fitsVertically = _tryLayoutInDirection(Axis.vertical);
-        return fitsVertically ? Axis.vertical : Axis.horizontal;
-      } else if (hasBoundedWidth) {
-        // Height is unbounded, width is bounded: prefer horizontal
-        return Axis.horizontal;
-      } else {
-        // Both unbounded: default to primary direction
-        return primaryDirection;
-      }
-    }
-  }
-
-  bool _tryLayoutInDirection(Axis direction) {
-    final mainConstraint = direction == Axis.horizontal
-        ? constraints.maxWidth
-        : constraints.maxHeight;
-
-    // If the main constraint is infinite, we can't reliably determine fit
-    if (!mainConstraint.isFinite) {
-      return false; // Assume it doesn't fit to force a direction switch
-    }
-
-    // For finite constraints, measure if children fit
     if (measurementStrategy == MeasurementStrategy.intrinsic) {
-      return _tryLayoutUsingIntrinsicSize(direction, mainConstraint);
-    } else {
-      return _tryLayoutUsingDryLayout(direction, mainConstraint);
-    }
-  }
-
-  // Try layout using intrinsic size measurements
-  bool _tryLayoutUsingIntrinsicSize(Axis direction, double mainConstraint) {
-    double totalMainAxisSize = 0;
-    final spacing = _getSpacingForDirection(direction);
-    var isFirstChild = true;
-
-    // Measure children using intrinsic sizes
-    var child = firstChild;
-    while (child != null) {
-      double childMainAxisSize;
-      if (direction == Axis.horizontal) {
-        childMainAxisSize = child.getMaxIntrinsicWidth(constraints.maxHeight);
-      } else {
-        childMainAxisSize = child.getMaxIntrinsicHeight(constraints.maxWidth);
-      }
-
-      totalMainAxisSize += childMainAxisSize;
-
-      // Add spacing except for the first child
-      if (!isFirstChild) {
-        totalMainAxisSize += spacing;
-      }
-      isFirstChild = false;
-
-      // Early exit if we exceed the constraint
-      if (totalMainAxisSize > mainConstraint) {
-        return false;
-      }
-
-      child = childAfter(child);
+      final direction = _fitsUsingIntrinsics(primaryDirection, constraints)
+          ? primaryDirection
+          : _fallbackDirection;
+      return _measureWet(direction);
     }
 
-    return totalMainAxisSize <= mainConstraint;
-  }
-
-  // Try layout using dry layout for more accurate measurements
-  bool _tryLayoutUsingDryLayout(Axis direction, double mainConstraint) {
-    // Measure total size needed in the main axis
-    double totalMainAxisSize = 0;
-    final spacing = _getSpacingForDirection(direction);
-
-    var child = firstChild;
-    var isFirstChild = true;
-
-    // Create appropriate constraints for measuring children
-    final childConstraints = direction == Axis.horizontal
-        ? BoxConstraints(maxHeight: constraints.maxHeight)
-        : BoxConstraints(maxWidth: constraints.maxWidth);
-
-    while (child != null) {
-      // Get the child's size using dry layout
-      final childSize = child.getDryLayout(childConstraints);
-
-      // Get size in main axis
-      final childMainAxisSize =
-          direction == Axis.horizontal ? childSize.width : childSize.height;
-
-      totalMainAxisSize += childMainAxisSize;
-
-      // Add spacing except for the first child
-      if (!isFirstChild) {
-        totalMainAxisSize += spacing;
-      }
-      isFirstChild = false;
-
-      // Early exit if we exceed the constraint
-      if (totalMainAxisSize > mainConstraint) {
-        return false;
-      }
-
-      // Move to next child
-      child = childAfter(child);
+    final primaryMetrics = _measureWet(primaryDirection);
+    if (_fitsInDirection(primaryMetrics, constraints)) {
+      return primaryMetrics;
     }
 
-    // Check if it fits
-    return totalMainAxisSize <= mainConstraint;
+    return _measureWet(_fallbackDirection);
   }
 
-  // Performs the actual layout in the given direction
-  void _layoutWithDirection(Axis direction) {
-    final isHorizontal = direction == Axis.horizontal;
-    final directionSpacing = _getSpacingForDirection(direction);
-    final alignment = _getAlignmentForDirection(direction);
-    final crossAlignment = _getCrossAlignmentForDirection(direction);
-
-    // Track the maximum cross-axis size and total main-axis size
-    double maxCrossAxisSize = 0;
-    double totalMainAxisSize = 0;
-
-    // First pass: Layout all children and measure sizes
-    final childrenList = <RenderBox>[];
-    final mainSizes = <double>[];
-    final crossSizes = <double>[];
+  _LayoutMetrics _measureWet(Axis direction) {
+    final childConstraints = _childConstraintsFor(direction, constraints);
+    var childrenMainAxisExtent = 0.0;
+    var maxCrossAxisExtent = 0.0;
+    var measuredChildCount = 0;
 
     var child = firstChild;
-
     while (child != null) {
-      // Create constraints for the child based on the layout direction
-      final childConstraints = isHorizontal
-          ? BoxConstraints(maxHeight: constraints.maxHeight)
-          : BoxConstraints(maxWidth: constraints.maxWidth);
-
       child.layout(childConstraints, parentUsesSize: true);
-
-      // Get the child's main and cross axis sizes
-      final childMainAxisSize =
-          isHorizontal ? child.size.width : child.size.height;
-      final childCrossAxisSize =
-          isHorizontal ? child.size.height : child.size.width;
-
-      // Update tracking variables
-      childrenList.add(child);
-      mainSizes.add(childMainAxisSize);
-      crossSizes.add(childCrossAxisSize);
-
-      // Add the child's size to the total
-      totalMainAxisSize += childMainAxisSize;
-      maxCrossAxisSize = math.max(maxCrossAxisSize, childCrossAxisSize);
-
-      // Move to next child
+      childrenMainAxisExtent += _mainAxisExtent(direction, child.size);
+      maxCrossAxisExtent = math.max(
+        maxCrossAxisExtent,
+        _crossAxisExtent(direction, child.size),
+      );
+      measuredChildCount++;
       child = childAfter(child);
     }
 
-    // Calculate the space needed for spacing between children
-    final spacingSize = directionSpacing * math.max(0, childrenList.length - 1);
-
-    // Calculate the container size
-    double containerMainAxisSize;
-
-    // Check if we need to expand to fill available space for certain alignment modes
-    final shouldExpandMainAxis = alignment == WrapAlignment.spaceBetween ||
-        alignment == WrapAlignment.spaceAround ||
-        alignment == WrapAlignment.spaceEvenly;
-
-    if (shouldExpandMainAxis) {
-      // Use maximum available space for these alignment modes
-      containerMainAxisSize =
-          isHorizontal ? constraints.maxWidth : constraints.maxHeight;
-    } else {
-      // Otherwise, use only as much space as needed
-      containerMainAxisSize = isHorizontal
-          ? constraints.constrainWidth(totalMainAxisSize + spacingSize)
-          : constraints.constrainHeight(totalMainAxisSize + spacingSize);
-    }
-
-    final containerCrossAxisSize = isHorizontal
-        ? constraints.constrainHeight(maxCrossAxisSize)
-        : constraints.constrainWidth(maxCrossAxisSize);
-
-    // Set the size of this render object
-    size = isHorizontal
-        ? Size(containerMainAxisSize, containerCrossAxisSize)
-        : Size(containerCrossAxisSize, containerMainAxisSize);
-
-    // Check for overflow
-    _hasVisualOverflow =
-        containerMainAxisSize < totalMainAxisSize + spacingSize ||
-            containerCrossAxisSize < maxCrossAxisSize;
-
-    // Calculate free space for alignment
-    // THIS IS THE KEY FIX: properly calculate free space without including spacing
-    final double freeMainAxisSpace =
-        math.max(0, containerMainAxisSize - totalMainAxisSize - spacingSize);
-
-    // Handle RTL text direction for horizontal layout
-    final isRtl = isHorizontal && textDirection == TextDirection.rtl;
-
-    if (isHorizontal && isRtl) {
-      // RTL horizontal layout (right-to-left)
-      _positionChildrenRtl(
-          childrenList,
-          mainSizes,
-          crossSizes,
-          containerMainAxisSize,
-          containerCrossAxisSize,
-          freeMainAxisSpace,
-          directionSpacing,
-          alignment,
-          crossAlignment);
-    } else {
-      // LTR horizontal layout or vertical layout
-      _positionChildrenLtr(
-          childrenList,
-          mainSizes,
-          crossSizes,
-          containerCrossAxisSize,
-          freeMainAxisSpace,
-          directionSpacing,
-          alignment,
-          crossAlignment,
-          isHorizontal);
-    }
+    return _LayoutMetrics(
+      direction: direction,
+      childCount: measuredChildCount,
+      childrenMainAxisExtent: childrenMainAxisExtent,
+      maxCrossAxisExtent: maxCrossAxisExtent,
+      spacing: _getSpacingForDirection(direction),
+    );
   }
 
-  void _positionChildrenLtr(
-      List<RenderBox> children,
-      List<double> mainSizes,
-      List<double> crossSizes,
-      double containerCrossAxisSize,
-      double freeMainAxisSpace,
-      double spacing,
-      WrapAlignment alignment,
-      WrapCrossAlignment crossAlignment,
-      bool isHorizontal) {
-    // No children to position
-    if (children.isEmpty) {
+  void _commitLayout(_LayoutMetrics metrics) {
+    // Size and offsets are committed only after the final direction is known.
+    // This keeps debug dry-layout checks from seeing the temporary primary
+    // measurement when fallback is required.
+    size = _computeContainerSize(metrics, constraints);
+    _hasVisualOverflow = _computeVisualOverflow(metrics, size);
+    _positionChildren(metrics, size);
+  }
+
+  Size _computeContainerSize(
+    _LayoutMetrics metrics,
+    BoxConstraints constraints,
+  ) {
+    final maxMainAxisExtent = _maxMainAxisExtent(
+      metrics.direction,
+      constraints,
+    );
+    final alignment = _getAlignmentForDirection(metrics.direction);
+    final shouldExpandMainAxis =
+        maxMainAxisExtent.isFinite && _alignmentExpandsMainAxis(alignment);
+
+    final containerMainAxisExtent = shouldExpandMainAxis
+        ? maxMainAxisExtent
+        : _constrainMainAxisExtent(
+            metrics.direction,
+            constraints,
+            metrics.totalMainAxisExtent,
+          );
+    final containerCrossAxisExtent = _constrainCrossAxisExtent(
+      metrics.direction,
+      constraints,
+      metrics.maxCrossAxisExtent,
+    );
+
+    return _sizeForAxisExtents(
+      metrics.direction,
+      containerMainAxisExtent,
+      containerCrossAxisExtent,
+    );
+  }
+
+  bool _computeVisualOverflow(_LayoutMetrics metrics, Size containerSize) {
+    return _mainAxisExtent(metrics.direction, containerSize) <
+            metrics.totalMainAxisExtent ||
+        _crossAxisExtent(metrics.direction, containerSize) <
+            metrics.maxCrossAxisExtent;
+  }
+
+  void _notifyDirectionChanged(Axis newDirection) {
+    final oldDirection = _lastLaidOutDirection;
+    _lastLaidOutDirection = newDirection;
+
+    if (oldDirection == null || oldDirection == newDirection) {
       return;
     }
 
-    // Calculate the leading space and space between children based on alignment
-    double leadingSpace;
-    double betweenSpace;
-
-    switch (alignment) {
-      case WrapAlignment.start:
-        leadingSpace = 0.0;
-        betweenSpace = spacing;
-      case WrapAlignment.end:
-        leadingSpace = freeMainAxisSpace;
-        betweenSpace = spacing;
-      case WrapAlignment.center:
-        leadingSpace = freeMainAxisSpace / 2.0;
-        betweenSpace = spacing;
-      case WrapAlignment.spaceBetween:
-        if (children.length > 1) {
-          leadingSpace = 0.0;
-          betweenSpace = spacing + freeMainAxisSpace / (children.length - 1);
-        } else {
-          // For single child, center it
-          leadingSpace = freeMainAxisSpace / 2.0;
-          betweenSpace = spacing;
-        }
-      case WrapAlignment.spaceAround:
-        if (children.isNotEmpty) {
-          final spacePerChild = freeMainAxisSpace / children.length;
-          leadingSpace = spacePerChild / 2.0;
-          betweenSpace = spacing + spacePerChild;
-        } else {
-          leadingSpace = 0.0;
-          betweenSpace = spacing;
-        }
-      case WrapAlignment.spaceEvenly:
-        if (children.isNotEmpty) {
-          final spacePerGap = freeMainAxisSpace / (children.length + 1);
-          leadingSpace = spacePerGap;
-          betweenSpace = spacing + spacePerGap;
-        } else {
-          leadingSpace = 0.0;
-          betweenSpace = spacing;
-        }
-    }
-
-    // Start positioning from the leading edge plus the computed offset
-    var currentOffset = leadingSpace;
-
-    // Position each child
-    for (var i = 0; i < children.length; i++) {
-      final child = children[i];
-      final childMainAxisSize = mainSizes[i];
-      final childCrossAxisSize = crossSizes[i];
-
-      // Calculate cross axis offset based on alignment
-      final childCrossAxisOffset = _getCrossAxisOffset(
-          crossAlignment,
-          containerCrossAxisSize,
-          childCrossAxisSize,
-          isHorizontal ? Axis.horizontal : Axis.vertical);
-
-      // Position the child
-      (child.parentData as SingleAxisWrapParentData?)?.offset = isHorizontal
-          ? Offset(currentOffset, childCrossAxisOffset)
-          : Offset(childCrossAxisOffset, currentOffset);
-
-      // Move to the next position
-      currentOffset += childMainAxisSize;
-
-      // Add spacing only between children, not after the last one
-      if (i < children.length - 1) {
-        // Add the calculated spacing between items
-        currentOffset += betweenSpace;
-      }
-    }
-  }
-
-  void _positionChildrenRtl(
-      List<RenderBox> children,
-      List<double> mainSizes,
-      List<double> crossSizes,
-      double containerMainAxisSize,
-      double containerCrossAxisSize,
-      double freeMainAxisSpace,
-      double spacing,
-      WrapAlignment alignment,
-      WrapCrossAlignment crossAlignment) {
-    // No children to position
-    if (children.isEmpty) {
+    final generation = ++_directionNotificationGeneration;
+    if (onLayoutDirectionChanged == null) {
       return;
     }
 
-    // Calculate the leading space and space between children based on alignment
-    double leadingSpace;
-    double betweenSpace;
-
-    // For RTL, we need to flip start/end alignments
-    final effectiveAlignment = alignment == WrapAlignment.start
-        ? WrapAlignment.end
-        : alignment == WrapAlignment.end
-            ? WrapAlignment.start
-            : alignment;
-
-    switch (effectiveAlignment) {
-      case WrapAlignment.start:
-        leadingSpace = 0.0;
-        betweenSpace = spacing;
-      case WrapAlignment.end:
-        leadingSpace = freeMainAxisSpace;
-        betweenSpace = spacing;
-      case WrapAlignment.center:
-        leadingSpace = freeMainAxisSpace / 2.0;
-        betweenSpace = spacing;
-      case WrapAlignment.spaceBetween:
-        if (children.length > 1) {
-          leadingSpace = 0.0;
-          betweenSpace = spacing + freeMainAxisSpace / (children.length - 1);
-        } else {
-          // For single child, center it
-          leadingSpace = freeMainAxisSpace / 2.0;
-          betweenSpace = spacing;
-        }
-      case WrapAlignment.spaceAround:
-        if (children.isNotEmpty) {
-          final spacePerChild = freeMainAxisSpace / children.length;
-          leadingSpace = spacePerChild / 2.0;
-          betweenSpace = spacing + spacePerChild;
-        } else {
-          leadingSpace = 0.0;
-          betweenSpace = spacing;
-        }
-      case WrapAlignment.spaceEvenly:
-        if (children.isNotEmpty) {
-          final spacePerGap = freeMainAxisSpace / (children.length + 1);
-          leadingSpace = spacePerGap;
-          betweenSpace = spacing + spacePerGap;
-        } else {
-          leadingSpace = 0.0;
-          betweenSpace = spacing;
-        }
-    }
-
-    // Start positioning from the trailing edge
-    var currentOffset = containerMainAxisSize - leadingSpace;
-
-    // Position each child from right-to-left
-    for (var i = 0; i < children.length; i++) {
-      final child = children[i];
-      final childMainAxisSize = mainSizes[i];
-      final childCrossAxisSize = crossSizes[i];
-
-      // Calculate cross axis offset based on alignment
-      final childCrossAxisOffset = _getCrossAxisOffset(crossAlignment,
-          containerCrossAxisSize, childCrossAxisSize, Axis.horizontal);
-
-      // Move offset by child width first (RTL layout)
-      currentOffset -= childMainAxisSize;
-
-      // Set the child position
-      (child.parentData as SingleAxisWrapParentData?)?.offset =
-          Offset(currentOffset, childCrossAxisOffset);
-
-      // Subtract spacing only between children, not after the last one
-      if (i < children.length - 1) {
-        // Subtract the calculated spacing between items
-        currentOffset -= betweenSpace;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!attached || generation != _directionNotificationGeneration) {
+        return;
       }
+
+      onLayoutDirectionChanged?.call(newDirection);
+    }, debugLabel: 'SingleAxisWrap.onLayoutDirectionChanged');
+  }
+
+  void _positionChildren(_LayoutMetrics metrics, Size containerSize) {
+    // Offsets are calculated in logical main-axis order, then mirrored for RTL
+    // or upward vertical layouts at the final physical offset step.
+    final containerMainAxisExtent = _mainAxisExtent(
+      metrics.direction,
+      containerSize,
+    );
+    final containerCrossAxisExtent = _crossAxisExtent(
+      metrics.direction,
+      containerSize,
+    );
+    final freeMainAxisSpace = math.max(
+      0.0,
+      containerMainAxisExtent - metrics.totalMainAxisExtent,
+    );
+    final (leadingSpace, betweenSpace) = _distributeMainAxisSpace(
+      _getAlignmentForDirection(metrics.direction),
+      freeMainAxisSpace,
+      metrics.spacing,
+      metrics.childCount,
+    );
+
+    final reverseMainAxis = _mainAxisIsReversed(metrics.direction);
+    var logicalMainAxisOffset = leadingSpace;
+
+    var child = firstChild;
+    while (child != null) {
+      final childSize = child.size;
+      final childMainAxisExtent = _mainAxisExtent(metrics.direction, childSize);
+      final childCrossAxisExtent = _crossAxisExtent(
+        metrics.direction,
+        childSize,
+      );
+      final mainAxisOffset = reverseMainAxis
+          ? containerMainAxisExtent -
+                logicalMainAxisOffset -
+                childMainAxisExtent
+          : logicalMainAxisOffset;
+      final crossAxisOffset = _getCrossAxisOffset(
+        _getCrossAlignmentForDirection(metrics.direction),
+        containerCrossAxisExtent,
+        childCrossAxisExtent,
+        metrics.direction,
+      );
+
+      final childParentData = child.parentData! as SingleAxisWrapParentData;
+      childParentData.offset = metrics.direction == Axis.horizontal
+          ? Offset(mainAxisOffset, crossAxisOffset)
+          : Offset(crossAxisOffset, mainAxisOffset);
+
+      logicalMainAxisOffset += childMainAxisExtent + betweenSpace;
+      child = childAfter(child);
     }
   }
 
-// Calculates the offset in the cross axis based on alignment
+  Iterable<_PositionedDryChildLayout> _positionDryChildren(
+    _LayoutMetrics metrics,
+    Size containerSize,
+  ) sync* {
+    final dryChildren = metrics.dryChildren;
+    if (dryChildren == null || dryChildren.isEmpty) {
+      return;
+    }
+
+    final containerMainAxisExtent = _mainAxisExtent(
+      metrics.direction,
+      containerSize,
+    );
+    final containerCrossAxisExtent = _crossAxisExtent(
+      metrics.direction,
+      containerSize,
+    );
+    final freeMainAxisSpace = math.max(
+      0.0,
+      containerMainAxisExtent - metrics.totalMainAxisExtent,
+    );
+    final (leadingSpace, betweenSpace) = _distributeMainAxisSpace(
+      _getAlignmentForDirection(metrics.direction),
+      freeMainAxisSpace,
+      metrics.spacing,
+      metrics.childCount,
+    );
+
+    final reverseMainAxis = _mainAxisIsReversed(metrics.direction);
+    var logicalMainAxisOffset = leadingSpace;
+
+    for (final childLayout in dryChildren) {
+      final childMainAxisExtent = _mainAxisExtent(
+        metrics.direction,
+        childLayout.size,
+      );
+      final childCrossAxisExtent = _crossAxisExtent(
+        metrics.direction,
+        childLayout.size,
+      );
+      final mainAxisOffset = reverseMainAxis
+          ? containerMainAxisExtent -
+                logicalMainAxisOffset -
+                childMainAxisExtent
+          : logicalMainAxisOffset;
+      final crossAxisOffset = _getCrossAxisOffset(
+        _getCrossAlignmentForDirection(metrics.direction),
+        containerCrossAxisExtent,
+        childCrossAxisExtent,
+        metrics.direction,
+      );
+      final offset = metrics.direction == Axis.horizontal
+          ? Offset(mainAxisOffset, crossAxisOffset)
+          : Offset(crossAxisOffset, mainAxisOffset);
+
+      yield _PositionedDryChildLayout(
+        child: childLayout.child,
+        constraints: childLayout.constraints,
+        offset: offset,
+      );
+
+      logicalMainAxisOffset += childMainAxisExtent + betweenSpace;
+    }
+  }
+
+  (double leadingSpace, double betweenSpace) _distributeMainAxisSpace(
+    WrapAlignment alignment,
+    double freeSpace,
+    double spacing,
+    int childCount,
+  ) {
+    assert(childCount > 0);
+
+    // Match WrapAlignment semantics: with one child, spaceBetween has no
+    // between-space to distribute, so it behaves like start.
+    return switch (alignment) {
+      WrapAlignment.start => (0.0, spacing),
+      WrapAlignment.end => (freeSpace, spacing),
+      WrapAlignment.center => (freeSpace / 2.0, spacing),
+      WrapAlignment.spaceBetween when childCount < 2 => (0.0, spacing),
+      WrapAlignment.spaceBetween => (
+        0.0,
+        spacing + freeSpace / (childCount - 1),
+      ),
+      WrapAlignment.spaceAround => (
+        freeSpace / childCount / 2.0,
+        spacing + freeSpace / childCount,
+      ),
+      WrapAlignment.spaceEvenly => (
+        freeSpace / (childCount + 1),
+        spacing + freeSpace / (childCount + 1),
+      ),
+    };
+  }
+
+  bool _mainAxisIsReversed(Axis direction) {
+    return direction == Axis.horizontal
+        ? textDirection == TextDirection.rtl
+        : verticalDirection == VerticalDirection.up;
+  }
+
   double _getCrossAxisOffset(
     WrapCrossAlignment alignment,
     double containerSize,
     double childSize,
     Axis direction,
   ) {
-    // Determine if alignment should be flipped based on text/vertical direction
     final flipAlignment = direction == Axis.horizontal
         ? verticalDirection == VerticalDirection.up
         : textDirection == TextDirection.rtl;
@@ -1026,6 +1082,20 @@ class RenderSingleAxisWrap extends RenderBox
   }
 
   @override
+  Rect? describeApproximatePaintClip(RenderObject child) {
+    if (_hasVisualOverflow && clipBehavior != Clip.none) {
+      return Offset.zero & size;
+    }
+    return null;
+  }
+
+  @override
+  void detach() {
+    _directionNotificationGeneration++;
+    super.detach();
+  }
+
+  @override
   void dispose() {
     _clipRectLayer.layer = null;
     super.dispose();
@@ -1042,26 +1112,114 @@ class RenderSingleAxisWrap extends RenderBox
     properties
       ..add(EnumProperty<Axis>('primaryDirection', primaryDirection))
       ..add(
-          EnumProperty<Axis>('currentLayoutDirection', _currentLayoutDirection))
+        EnumProperty<Axis>('currentLayoutDirection', _currentLayoutDirection),
+      )
+      ..add(EnumProperty<Axis>('lastLaidOutDirection', _lastLaidOutDirection))
       ..add(DoubleProperty('spacing', spacing))
       ..add(DoubleProperty('horizontalSpacing', horizontalSpacing))
       ..add(DoubleProperty('verticalSpacing', verticalSpacing))
-      ..add(EnumProperty<WrapAlignment>(
-          'horizontalAlignment', horizontalAlignment))
+      ..add(
+        EnumProperty<WrapAlignment>('horizontalAlignment', horizontalAlignment),
+      )
       ..add(EnumProperty<WrapAlignment>('verticalAlignment', verticalAlignment))
-      ..add(EnumProperty<WrapCrossAlignment>(
-          'horizontalCrossAxisAlignment', horizontalCrossAxisAlignment))
-      ..add(EnumProperty<WrapCrossAlignment>(
-          'verticalCrossAxisAlignment', verticalCrossAxisAlignment))
+      ..add(
+        EnumProperty<WrapCrossAlignment>(
+          'horizontalCrossAxisAlignment',
+          horizontalCrossAxisAlignment,
+        ),
+      )
+      ..add(
+        EnumProperty<WrapCrossAlignment>(
+          'verticalCrossAxisAlignment',
+          verticalCrossAxisAlignment,
+        ),
+      )
       ..add(EnumProperty<TextDirection>('textDirection', textDirection))
-      ..add(EnumProperty<VerticalDirection>(
-          'verticalDirection', verticalDirection))
+      ..add(
+        EnumProperty<VerticalDirection>('verticalDirection', verticalDirection),
+      )
       ..add(EnumProperty<Clip>('clipBehavior', clipBehavior))
-      ..add(EnumProperty<MeasurementStrategy>(
-          'measurementStrategy', measurementStrategy))
-      ..add(FlagProperty('maintainLayout',
-          value: maintainLayout, ifTrue: 'enabled', ifFalse: 'disabled'))
-      ..add(FlagProperty('hasVisualOverflow',
-          value: _hasVisualOverflow, ifTrue: 'overflow', ifFalse: 'contained'));
+      ..add(
+        EnumProperty<MeasurementStrategy>(
+          'measurementStrategy',
+          measurementStrategy,
+        ),
+      )
+      ..add(
+        FlagProperty(
+          'maintainLayout',
+          value: maintainLayout,
+          ifTrue: 'enabled',
+          ifFalse: 'disabled',
+        ),
+      )
+      ..add(
+        FlagProperty(
+          'hasVisualOverflow',
+          value: _hasVisualOverflow,
+          ifTrue: 'overflow',
+          ifFalse: 'contained',
+        ),
+      );
   }
+}
+
+enum _IntrinsicExtent { min, max }
+
+// Shared measurement result used by dry layout, real layout, and positioning.
+// Keeping this shape central prevents drift between Flutter's dry and wet
+// layout protocols.
+class _LayoutMetrics {
+  const _LayoutMetrics({
+    required this.direction,
+    required this.childCount,
+    required this.childrenMainAxisExtent,
+    required this.maxCrossAxisExtent,
+    required this.spacing,
+    this.dryChildren,
+  });
+
+  final Axis direction;
+  final int childCount;
+  final double childrenMainAxisExtent;
+  final double maxCrossAxisExtent;
+  final double spacing;
+  final List<_DryChildLayout>? dryChildren;
+
+  double get spacingExtent {
+    if (childCount <= 1) {
+      return 0.0;
+    }
+
+    return spacing * (childCount - 1);
+  }
+
+  double get totalMainAxisExtent => childrenMainAxisExtent + spacingExtent;
+}
+
+// Captures a dry child measurement together with the constraints that produced
+// it so dry baseline calculations do not accidentally use different inputs.
+class _DryChildLayout {
+  const _DryChildLayout({
+    required this.child,
+    required this.constraints,
+    required this.size,
+  });
+
+  final RenderBox child;
+  final BoxConstraints constraints;
+  final Size size;
+}
+
+// A dry child with the offset it would receive during real layout.
+class _PositionedDryChildLayout {
+  const _PositionedDryChildLayout({
+    required this.child,
+    required this.constraints,
+    required this.offset,
+  });
+
+  final RenderBox child;
+  final BoxConstraints constraints;
+  final Offset offset;
 }

@@ -5,6 +5,7 @@
 *.pyc
 *.swp
 .DS_Store
+diff.txt
 .atom/
 .buildlog/
 .history
@@ -101,6 +102,7 @@ coverage/
 
 # Submodules
 !pubspec.lock
+example/pubspec.lock
 packages/**/pubspec.lock
 
 # Web related
