@@ -113,7 +113,7 @@ class _DebugScreenState extends State<DebugScreen> {
                           switchValues[index] = value;
                         });
                       },
-                      activeColor:
+                      activeThumbColor:
                           Colors.white, // Set the active color to white.
                       thumbColor: WidgetStateProperty.resolveWith<Color>((
                         Set<WidgetState> states,

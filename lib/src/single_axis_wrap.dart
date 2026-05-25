@@ -1,39 +1,45 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:single_axis_wrap/src/single_axis_wrap_parent_data.dart';
+import 'package:single_axis_wrap/src/single_axis_wrap_types.dart';
 
-/// Callback for when the layout direction changes between horizontal and vertical.
-typedef LayoutDirectionCallback = void Function(Axis layoutDirection);
+export 'single_axis_wrap_types.dart';
 
-/// Strategy for measuring children when determining if they fit in a direction.
-enum MeasurementStrategy {
-  /// Use layout measurements for accurate sizing (default).
-  /// More accurate but potentially more expensive.
-  layout,
-
-  /// Use intrinsic size measurements.
-  /// Less accurate but potentially faster.
-  intrinsic,
-
-  /// Prefer the primary direction when one or both directions have unbounded constraints.
-  /// Useful when you want to enforce a direction despite unbounded constraints.
-  preferPrimary,
-}
-
-/// A widget that lays out its children either in a single row or a single column,
-/// making an "all or nothing" layout decision based on available space.
+/// Lays out children in either one complete row or one complete column.
 ///
-/// Unlike [Wrap], which can mix horizontal and vertical layouts by wrapping to new lines,
-/// [SingleAxisWrap] will commit fully to either a row or a column layout based on whether
-/// all children can fit in the primary direction.
+/// Unlike [Wrap], which can place children into multiple runs,
+/// [SingleAxisWrap] commits to one axis for every child. It first tries
+/// [primaryDirection]. If the primary main axis is finite and all children plus
+/// spacing fit, that axis is used. Otherwise the opposite axis is used.
 ///
-/// For example, if [primaryDirection] is [Axis.horizontal], SingleAxisWrap will attempt to
-/// place all children in a row. If they don't fit within the available width, it will
-/// switch to a column layout instead.
+/// This is closest to [OverflowBar], but it supports both horizontal-first and
+/// vertical-first layouts, separate alignment for each final axis, and a
+/// direction-change callback.
+///
+/// If the primary main axis is unbounded, the primary direction is kept because
+/// there is no finite limit to overflow. The fallback axis can still overflow
+/// when it is also too small; use [clipBehavior] to control paint clipping in
+/// that case.
+///
+/// A button group that arranges actions in a row when space allows and falls
+/// back to a column on narrow screens:
+///
+/// ```dart
+/// SingleAxisWrap(
+///   spacing: 8,
+///   horizontalAlignment: WrapAlignment.end,
+///   children: [
+///     TextButton(onPressed: () {}, child: Text('Cancel')),
+///     ElevatedButton(onPressed: () {}, child: Text('Save')),
+///   ],
+/// )
+/// ```
 class SingleAxisWrap extends MultiChildRenderObjectWidget {
-  /// Creates a widget that makes an "all or nothing" layout decision between row and column.
+  /// Creates a layout that chooses one axis for all [children].
   ///
-  /// By default, it attempts to lay out children in a horizontal row first.
+  /// By default, it attempts a horizontal row first with no spacing and start
+  /// alignment. [spacing], [horizontalSpacing], and [verticalSpacing] must be
+  /// finite and non-negative.
   const SingleAxisWrap({
     required super.children,
     super.key,
@@ -51,81 +57,133 @@ class SingleAxisWrap extends MultiChildRenderObjectWidget {
     this.onLayoutDirectionChanged,
     this.maintainLayout = false,
     this.measurementStrategy = MeasurementStrategy.layout,
-  })  : assert(spacing >= 0.0, 'Spacing must be non-negative'),
-        assert(horizontalSpacing == null || horizontalSpacing >= 0.0,
-            'Horizontal spacing must be non-negative'),
-        assert(verticalSpacing == null || verticalSpacing >= 0.0,
-            'Vertical spacing must be non-negative');
+  }) : assert(
+         spacing >= 0.0 && spacing < double.infinity,
+         'Spacing must be finite and non-negative',
+       ),
+       assert(
+         horizontalSpacing == null ||
+             (horizontalSpacing >= 0.0 && horizontalSpacing < double.infinity),
+         'Horizontal spacing must be finite and non-negative',
+       ),
+       assert(
+         verticalSpacing == null ||
+             (verticalSpacing >= 0.0 && verticalSpacing < double.infinity),
+         'Vertical spacing must be finite and non-negative',
+       );
 
-  /// The primary direction to attempt first.
+  /// The axis attempted before falling back to the opposite axis.
   ///
-  /// If set to [Axis.horizontal], SingleAxisWrap will try to lay out all children
-  /// in a single row. If they don't fit, it will use a column layout instead.
+  /// If set to [Axis.horizontal], all children are first measured as one row.
+  /// If the row does not fit a finite width, the widget uses a column.
   ///
-  /// If set to [Axis.vertical], SingleAxisWrap will try to lay out all children
-  /// in a single column. If they don't fit, it will use a row layout instead.
+  /// If set to [Axis.vertical], all children are first measured as one column.
+  /// If the column does not fit a finite height, the widget uses a row.
+  ///
+  /// If the primary main axis is unbounded, the primary direction is used
+  /// because there is no finite main-axis limit to exceed.
   final Axis primaryDirection;
 
-  /// Default spacing between children in both layouts.
+  /// Default gap between adjacent children in either final layout.
   ///
-  /// This value is used for both horizontal and vertical spacing unless
-  /// [horizontalSpacing] or [verticalSpacing] are specifically provided.
+  /// This value is used for both axes unless [horizontalSpacing] or
+  /// [verticalSpacing] is provided. It must be finite and non-negative.
   final double spacing;
 
-  /// Spacing between children when in horizontal (row) layout.
+  /// Gap between adjacent children when the final layout is horizontal.
   ///
-  /// If null, [spacing] is used instead.
+  /// If null, [spacing] is used. When provided, it must be finite and
+  /// non-negative.
   final double? horizontalSpacing;
 
-  /// Spacing between children when in vertical (column) layout.
+  /// Gap between adjacent children when the final layout is vertical.
   ///
-  /// If null, [spacing] is used instead.
+  /// If null, [spacing] is used. When provided, it must be finite and
+  /// non-negative.
   final double? verticalSpacing;
 
-  /// Alignment of children along the main axis when in horizontal (row) layout.
+  /// Main-axis alignment used when the final layout is horizontal.
+  ///
+  /// The `start` and `end` values are resolved using [textDirection]. Space
+  /// based values expand only when the incoming horizontal constraint is finite;
+  /// otherwise the widget shrink-wraps its children.
+  ///
+  /// Non-space values such as [WrapAlignment.center] and [WrapAlignment.end]
+  /// distribute only the space inside this widget's actual width. In loose
+  /// constraints, the widget can shrink-wrap its children, leaving no extra
+  /// horizontal space for those values to visibly move children.
   final WrapAlignment horizontalAlignment;
 
-  /// Alignment of children along the main axis when in vertical (column) layout.
+  /// Main-axis alignment used when the final layout is vertical.
+  ///
+  /// The `start` and `end` values are resolved using [verticalDirection]. Space
+  /// based values expand only when the incoming vertical constraint is finite;
+  /// otherwise the widget shrink-wraps its children.
+  ///
+  /// Non-space values such as [WrapAlignment.center] and [WrapAlignment.end]
+  /// distribute only the space inside this widget's actual height. In loose
+  /// constraints, the widget can shrink-wrap its children, leaving no extra
+  /// vertical space for those values to visibly move children.
   final WrapAlignment verticalAlignment;
 
-  /// Alignment of children along the cross axis when in horizontal (row) layout.
+  /// Cross-axis alignment used when the final layout is horizontal.
+  ///
+  /// The `start` and `end` values are resolved using [verticalDirection].
   final WrapCrossAlignment horizontalCrossAxisAlignment;
 
-  /// Alignment of children along the cross axis when in vertical (column) layout.
+  /// Cross-axis alignment used when the final layout is vertical.
+  ///
+  /// The `start` and `end` values are resolved using [textDirection].
   final WrapCrossAlignment verticalCrossAxisAlignment;
 
-  /// Determines the order to lay children out horizontally and how to interpret
-  /// `start` and `end` in the horizontal direction.
+  /// Resolves horizontal child order and horizontal `start` / `end` alignment.
   ///
-  /// If null, defaults to the ambient [Directionality].
+  /// If null, the widget reads the ambient [Directionality] during build. A
+  /// [Directionality] ancestor is therefore required unless this is provided.
   final TextDirection? textDirection;
 
-  /// Determines the order to lay children out vertically and how to interpret
-  /// `start` and `end` in the vertical direction.
+  /// Resolves vertical child order and vertical `start` / `end` alignment.
+  ///
+  /// [VerticalDirection.down] places the first child near the top in vertical
+  /// layouts. [VerticalDirection.up] places the first child near the bottom.
   final VerticalDirection verticalDirection;
 
-  /// How to clip children that exceed the size of the container.
+  /// Controls paint clipping when children exceed this widget's final size.
+  ///
+  /// Clipping is only applied when visual overflow exists. Defaults to
+  /// [Clip.none], which allows overflowing children to paint outside the box.
+  /// Like most [RenderBox] widgets, hit testing remains limited to this
+  /// widget's own bounds.
   final Clip clipBehavior;
 
-  /// Called when the layout direction changes.
+  /// Called after the final layout direction changes.
   ///
-  /// This callback is useful for coordinating animations or other visual changes
-  /// when the layout switches between horizontal and vertical.
+  /// Use this to coordinate external animation or state with the chosen axis.
+  /// The callback is scheduled after layout, so it is safe to call `setState`
+  /// from it.
+  ///
+  /// It is not called for the initial layout because there is no previous
+  /// direction to change from. If multiple direction changes are scheduled in
+  /// one frame, only the latest pending notification is delivered.
   final LayoutDirectionCallback? onLayoutDirectionChanged;
 
-  /// Whether to maintain the current layout direction once chosen.
+  /// Whether to keep the currently chosen layout direction.
   ///
-  /// If true, once a layout direction is chosen (row or column), it will be
-  /// maintained even if the constraints change, preventing the layout from
-  /// flipping back and forth as the container size changes.
+  /// When true, the first chosen direction is reused even if later constraints
+  /// would choose the opposite axis. This avoids row-column flicker while a
+  /// parent is resizing or animating.
   ///
-  /// This is useful to prevent unwanted layout changes during animations or
-  /// when the available space fluctuates.
+  /// The direction stays locked until this widget is rebuilt with
+  /// [maintainLayout] set to false, [primaryDirection] changes, or the render
+  /// object is recreated. Changes to spacing, alignment, or
+  /// [measurementStrategy] relayout the existing locked direction; they do not
+  /// clear the lock by themselves.
   final bool maintainLayout;
 
-  /// Strategy to use when measuring children to determine if they fit.
+  /// Measurement strategy used for the axis fit decision.
   ///
-  /// This affects how children are measured during the layout decision phase.
+  /// Most users should keep the default [MeasurementStrategy.layout]. Use
+  /// [MeasurementStrategy.intrinsic] only after profiling.
   final MeasurementStrategy measurementStrategy;
 
   @override
@@ -150,7 +208,9 @@ class SingleAxisWrap extends MultiChildRenderObjectWidget {
 
   @override
   void updateRenderObject(
-      BuildContext context, RenderSingleAxisWrap renderObject) {
+    BuildContext context,
+    RenderSingleAxisWrap renderObject,
+  ) {
     renderObject
       ..primaryDirection = primaryDirection
       ..spacing = spacing
@@ -176,21 +236,46 @@ class SingleAxisWrap extends MultiChildRenderObjectWidget {
       ..add(DoubleProperty('spacing', spacing))
       ..add(DoubleProperty('horizontalSpacing', horizontalSpacing))
       ..add(DoubleProperty('verticalSpacing', verticalSpacing))
-      ..add(EnumProperty<WrapAlignment>(
-          'horizontalAlignment', horizontalAlignment))
+      ..add(
+        EnumProperty<WrapAlignment>('horizontalAlignment', horizontalAlignment),
+      )
       ..add(EnumProperty<WrapAlignment>('verticalAlignment', verticalAlignment))
-      ..add(EnumProperty<WrapCrossAlignment>(
-          'horizontalCrossAxisAlignment', horizontalCrossAxisAlignment))
-      ..add(EnumProperty<WrapCrossAlignment>(
-          'verticalCrossAxisAlignment', verticalCrossAxisAlignment))
-      ..add(EnumProperty<TextDirection>('textDirection', textDirection,
-          defaultValue: null))
-      ..add(EnumProperty<VerticalDirection>(
-          'verticalDirection', verticalDirection))
+      ..add(
+        EnumProperty<WrapCrossAlignment>(
+          'horizontalCrossAxisAlignment',
+          horizontalCrossAxisAlignment,
+        ),
+      )
+      ..add(
+        EnumProperty<WrapCrossAlignment>(
+          'verticalCrossAxisAlignment',
+          verticalCrossAxisAlignment,
+        ),
+      )
+      ..add(
+        EnumProperty<TextDirection>(
+          'textDirection',
+          textDirection,
+          defaultValue: null,
+        ),
+      )
+      ..add(
+        EnumProperty<VerticalDirection>('verticalDirection', verticalDirection),
+      )
       ..add(EnumProperty<Clip>('clipBehavior', clipBehavior))
-      ..add(EnumProperty<MeasurementStrategy>(
-          'measurementStrategy', measurementStrategy))
-      ..add(FlagProperty('maintainLayout',
-          value: maintainLayout, ifTrue: 'enabled', ifFalse: 'disabled'));
+      ..add(
+        EnumProperty<MeasurementStrategy>(
+          'measurementStrategy',
+          measurementStrategy,
+        ),
+      )
+      ..add(
+        FlagProperty(
+          'maintainLayout',
+          value: maintainLayout,
+          ifTrue: 'enabled',
+          ifFalse: 'disabled',
+        ),
+      );
   }
 }

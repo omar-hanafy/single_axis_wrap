@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3
+
+- Fixed dry layout and real layout parity when the primary direction falls back.
+- Stabilized intrinsic sizing, including finite opposite-axis queries.
+- Fixed RTL, `verticalDirection`, and single-child `spaceBetween` positioning semantics.
+- Fixed unbounded constraint handling and finite spacing validation.
+- Deprecated `MeasurementStrategy.preferPrimary`; use `MeasurementStrategy.layout` instead.
+- Improved direction-change callback delivery, dry baseline support, and clipping semantics.
+- Clarified layout decisions, constraints, `maintainLayout`, callbacks, and measurement strategies in the docs.
+
 ## 1.0.2
 
 - Organized code and enhanced code documentation.
