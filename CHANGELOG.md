@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.0
+
+- **Breaking:** Raised the minimum supported SDKs to Flutter 3.47.7 and Dart 3.13.5. Upgrade Flutter before adopting this release.
+- Corrected intrinsic sizing after `maintainLayout` locks its first layout direction.
+- Fixed the example so controls and their state stay consistent across rebuilds and layout changes, with scrolling in short windows.
+
 ## 1.0.4
 
 - Refreshed the README with a shorter usage-focused guide and clearer examples.

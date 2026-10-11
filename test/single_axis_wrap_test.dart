@@ -209,6 +209,246 @@ void main() {
   });
 
   group('SingleAxisWrap - MaintainLayout feature', () {
+    for (final primaryDirection in Axis.values) {
+      testWidgets(
+        'first maintained $primaryDirection fallback refreshes cached measurements',
+        (WidgetTester tester) async {
+          const hostKey = ValueKey<String>('render-host');
+          await tester.pumpWidget(const SizedBox(key: hostKey));
+          final render = SingleAxisWrap(
+            primaryDirection: primaryDirection,
+            textDirection: TextDirection.ltr,
+            maintainLayout: true,
+            spacing: 10,
+            children: const [],
+          ).createRenderObject(tester.element(find.byKey(hostKey)));
+          render.addAll([
+            RenderConstrainedBox(
+              additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+            ),
+            RenderConstrainedBox(
+              additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+            ),
+          ]);
+
+          const probeConstraints = BoxConstraints(
+            maxWidth: 300,
+            maxHeight: 300,
+          );
+          final horizontalPrimary = primaryDirection == Axis.horizontal;
+          final primarySize = horizontalPrimary
+              ? const Size(210, 50)
+              : const Size(100, 110);
+          final fallbackSize = horizontalPrimary
+              ? const Size(100, 110)
+              : const Size(210, 50);
+          expect(render.getDryLayout(probeConstraints), primarySize);
+          expect(
+            render.getMaxIntrinsicWidth(double.infinity),
+            primarySize.width,
+          );
+          expect(
+            render.getMaxIntrinsicHeight(double.infinity),
+            primarySize.height,
+          );
+
+          render.layout(
+            horizontalPrimary
+                ? const BoxConstraints(maxWidth: 150, maxHeight: 300)
+                : const BoxConstraints(maxWidth: 300, maxHeight: 80),
+          );
+
+          expect(render.size, fallbackSize);
+          expect(render.getDryLayout(probeConstraints), fallbackSize);
+          expect(
+            render.getMaxIntrinsicWidth(double.infinity),
+            fallbackSize.width,
+          );
+          expect(
+            render.getMaxIntrinsicHeight(double.infinity),
+            fallbackSize.height,
+          );
+
+          // The lock takes effect immediately, including another real layout
+          // before the deferred cache refresh could run.
+          render.layout(probeConstraints);
+          expect(render.size, fallbackSize);
+          render.dispose();
+        },
+      );
+    }
+
+    testWidgets('IntrinsicWidth relayouts for the first maintained fallback', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: IntrinsicWidth(
+                child: SingleAxisWrap(
+                  maintainLayout: true,
+                  spacing: 10,
+                  children: _boxes(count: 2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final render = tester.renderObject<RenderBox>(
+        find.byType(SingleAxisWrap),
+      );
+      expect(render.getMaxIntrinsicWidth(double.infinity), 100);
+      await tester.pump();
+      expect(render.size, const Size(100, 110));
+      expect(tester.takeException(), isNull);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('detach refreshes maintained measurements before reattach', (
+      WidgetTester tester,
+    ) async {
+      const hostKey = ValueKey<String>('render-host');
+      await tester.pumpWidget(const SizedBox(key: hostKey));
+      final render = const SingleAxisWrap(
+        textDirection: TextDirection.ltr,
+        maintainLayout: true,
+        spacing: 10,
+        children: [],
+      ).createRenderObject(tester.element(find.byKey(hostKey)));
+      render.addAll([
+        RenderConstrainedBox(
+          additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+        ),
+        RenderConstrainedBox(
+          additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+        ),
+      ]);
+      final owner = PipelineOwner()..rootNode = render;
+      const wide = BoxConstraints(maxWidth: 300, maxHeight: 300);
+      expect(render.getDryLayout(wide), const Size(210, 50));
+      render.layout(const BoxConstraints(maxWidth: 150, maxHeight: 300));
+
+      owner.rootNode = null;
+      expect(render.getDryLayout(wide), const Size(100, 110));
+      expect(render.getMaxIntrinsicWidth(double.infinity), 100);
+      await tester.pump();
+      owner.rootNode = render;
+      await tester.pump();
+      expect(render.getDryLayout(wide), const Size(100, 110));
+      expect(tester.takeException(), isNull);
+
+      owner.rootNode = null;
+      render.dispose();
+      owner.dispose();
+    });
+
+    testWidgets('pending maintained refresh is canceled on disposal', (
+      WidgetTester tester,
+    ) async {
+      const hostKey = ValueKey<String>('render-host');
+      await tester.pumpWidget(const SizedBox(key: hostKey));
+      final render = const SingleAxisWrap(
+        textDirection: TextDirection.ltr,
+        maintainLayout: true,
+        children: [],
+      ).createRenderObject(tester.element(find.byKey(hostKey)));
+      render.add(
+        RenderConstrainedBox(
+          additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+        ),
+      );
+      final owner = PipelineOwner()..rootNode = render;
+      render.layout(const BoxConstraints(maxWidth: 300, maxHeight: 300));
+      owner.rootNode = null;
+      render.dispose();
+      owner.dispose();
+
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('offscreen maintained refresh needs no scheduled frame', (
+      WidgetTester tester,
+    ) async {
+      const hostKey = ValueKey<String>('render-host');
+      await tester.pumpWidget(const SizedBox(key: hostKey));
+      final render = const SingleAxisWrap(
+        textDirection: TextDirection.ltr,
+        maintainLayout: true,
+        spacing: 10,
+        children: [],
+      ).createRenderObject(tester.element(find.byKey(hostKey)));
+      render.addAll([
+        RenderConstrainedBox(
+          additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+        ),
+        RenderConstrainedBox(
+          additionalConstraints: BoxConstraints.tight(const Size(100, 50)),
+        ),
+      ]);
+      var visualUpdateRequests = 0;
+      final owner = PipelineOwner(
+        onNeedVisualUpdate: () => visualUpdateRequests++,
+      )..rootNode = render;
+      const wide = BoxConstraints(maxWidth: 300, maxHeight: 300);
+      expect(render.getDryLayout(wide), const Size(210, 50));
+      render.layout(const BoxConstraints(maxWidth: 150, maxHeight: 300));
+      visualUpdateRequests = 0;
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      // pump flushes microtasks even when no frame is scheduled. A post-frame
+      // callback alone would never refresh this offscreen pipeline's cache.
+      await tester.pump();
+      expect(render.getDryLayout(wide), const Size(100, 110));
+      expect(visualUpdateRequests, 1);
+      owner.flushLayout();
+      expect(render.size, const Size(100, 110));
+      expect(tester.takeException(), isNull);
+
+      owner.rootNode = null;
+      render.dispose();
+      owner.dispose();
+    });
+
+    testWidgets('IntrinsicHeight relayouts for the first maintained fallback', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 80),
+              child: IntrinsicHeight(
+                child: SingleAxisWrap(
+                  primaryDirection: Axis.vertical,
+                  maintainLayout: true,
+                  spacing: 10,
+                  children: _boxes(count: 2),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final render = tester.renderObject<RenderBox>(
+        find.byType(SingleAxisWrap),
+      );
+      expect(render.getMaxIntrinsicHeight(double.infinity), 50);
+      await tester.pump();
+      expect(render.size, const Size(210, 50));
+      expect(tester.takeException(), isNull);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
     testWidgets('maintains horizontal layout when container shrinks', (
       WidgetTester tester,
     ) async {

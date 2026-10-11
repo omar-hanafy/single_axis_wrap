@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_initializing_formals, unnecessary_getters_setters
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
@@ -97,6 +98,7 @@ class RenderSingleAxisWrap extends RenderBox
     if (_primaryDirection == value) return;
     _primaryDirection = value;
     _currentLayoutDirection = null;
+    _cancelMaintainedLayoutRefresh();
     markNeedsLayout();
   }
 
@@ -248,6 +250,7 @@ class RenderSingleAxisWrap extends RenderBox
     _maintainLayout = value;
     if (!value) {
       _currentLayoutDirection = null;
+      _cancelMaintainedLayoutRefresh();
     }
     markNeedsLayout();
   }
@@ -267,6 +270,8 @@ class RenderSingleAxisWrap extends RenderBox
   Axis? _currentLayoutDirection;
   Axis? _lastLaidOutDirection;
   int _directionNotificationGeneration = 0;
+  int _maintainedLayoutRefreshGeneration = 0;
+  bool _needsMaintainedLayoutRefresh = false;
 
   final LayerHandle<ClipRectLayer> _clipRectLayer =
       LayerHandle<ClipRectLayer>();
@@ -768,7 +773,48 @@ class RenderSingleAxisWrap extends RenderBox
 
     _commitLayout(metrics);
     _currentLayoutDirection = metrics.direction;
+    if (maintainLayout && lockedDirection == null) {
+      _refreshMaintainedLayoutMeasurements();
+    }
     _notifyDirectionChanged(metrics.direction);
+  }
+
+  void _refreshMaintainedLayoutMeasurements() {
+    // Acquiring the first lock changes intrinsic and dry measurements even
+    // though the incoming constraints and public configuration did not change.
+    // RenderBox caches those measurements until markNeedsLayout is called.
+    if (!attached) {
+      // Flutter permits mutations in a detached tree. There is no active
+      // pipeline layout to re-dirty, so direct render-object users can refresh
+      // their cached measurements immediately.
+      markNeedsLayout();
+      return;
+    }
+
+    _needsMaintainedLayoutRefresh = true;
+    _scheduleMaintainedLayoutRefresh();
+  }
+
+  void _scheduleMaintainedLayoutRefresh() {
+    final generation = ++_maintainedLayoutRefreshGeneration;
+    scheduleMicrotask(() {
+      if (!attached ||
+          generation != _maintainedLayoutRefreshGeneration ||
+          !_needsMaintainedLayoutRefresh) {
+        return;
+      }
+
+      _needsMaintainedLayoutRefresh = false;
+      // Invalidate our cache and any ancestor that depended on it after the
+      // layout pass has finished. Re-dirtying an attached tree during layout
+      // violates Flutter's rendering contract.
+      markNeedsLayout();
+    });
+  }
+
+  void _cancelMaintainedLayoutRefresh() {
+    _needsMaintainedLayoutRefresh = false;
+    _maintainedLayoutRefreshGeneration++;
   }
 
   _LayoutMetrics _layoutWithResolvedDirection() {
@@ -1092,11 +1138,19 @@ class RenderSingleAxisWrap extends RenderBox
   @override
   void detach() {
     _directionNotificationGeneration++;
+    _maintainedLayoutRefreshGeneration++;
     super.detach();
+    if (_needsMaintainedLayoutRefresh) {
+      _needsMaintainedLayoutRefresh = false;
+      // The canceled microtask must not leave speculative measurements cached
+      // while the object is detached, where queries remain valid.
+      markNeedsLayout();
+    }
   }
 
   @override
   void dispose() {
+    _cancelMaintainedLayoutRefresh();
     _clipRectLayer.layer = null;
     super.dispose();
   }
