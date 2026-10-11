@@ -49,8 +49,8 @@ direction-change callbacks, and optional layout locking.
 
 ## Requirements
 
-- Dart `^3.12.0`
-- Flutter `>=3.44.0`
+- Dart `^3.13.5`
+- Flutter `>=3.47.7`
 - No runtime dependencies beyond Flutter
 
 ## Installation
@@ -129,6 +129,8 @@ SingleAxisWrap(
 The callback is scheduled after layout and is not called for the initial layout.
 `maintainLayout` keeps the first chosen direction until it is turned off,
 `primaryDirection` changes, or the render object is recreated.
+An intrinsic-size parent may need one additional frame after the first layout
+to settle to the locked direction's dimensions.
 
 ## Configuration
 

@@ -178,6 +178,9 @@ class SingleAxisWrap extends MultiChildRenderObjectWidget {
   /// object is recreated. Changes to spacing, alignment, or
   /// [measurementStrategy] relayout the existing locked direction; they do not
   /// clear the lock by themselves.
+  ///
+  /// An intrinsic-size parent may need one additional frame after the first
+  /// layout to settle to the locked direction's dimensions.
   final bool maintainLayout;
 
   /// Measurement strategy used for the axis fit decision.

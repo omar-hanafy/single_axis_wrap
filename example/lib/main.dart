@@ -1,11 +1,9 @@
-import 'dart:math';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:single_axis_wrap/single_axis_wrap.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -13,10 +11,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SingleAxisWrap Debug',
+      title: 'SingleAxisWrap Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
       ),
       home: const DebugScreen(),
     );
@@ -31,139 +28,146 @@ class DebugScreen extends StatefulWidget {
 }
 
 class _DebugScreenState extends State<DebugScreen> {
-  Axis direction = Axis.horizontal;
-  List<int> counters = [0, 0, 0, 0]; // Counters for each box
-  List<bool> switchValues = [false, false, false, false]; // Switch values
+  static const _boxWidth = 120.0;
+  static const _boxHeight = 64.0;
+  final _counters = [0, 0];
+  final _switchValues = [false, false];
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('SingleAxisWrap Demo')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Direction is ${direction.name.toUpperCase()}',
-              style: theme.textTheme.headlineLarge,
+      body: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          key: const ValueKey('demo-scroll'),
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, constraints.maxHeight - 32),
             ),
-            const SizedBox(height: 40),
-            const Text(
-              'Resize to make it switch to Vertical View Automatic',
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              width: 500,
-              padding: const EdgeInsets.all(16),
-              color: Colors.grey.shade200,
-              child: SingleAxisWrap(
-                verticalCrossAxisAlignment: WrapCrossAlignment.center,
-                horizontalAlignment: WrapAlignment.center,
-                onLayoutDirectionChanged: (Axis direction) {
-                  setState(() {
-                    this.direction = direction;
-                  });
-                },
-                spacing: 8,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildBox(Colors.red, '1', 0),
-                  _buildBox(Colors.green, '2', 1),
-                  _buildBox(Colors.blue, '3', 2),
-                  _buildBox(Colors.amber, '4', 3),
+                  Text(
+                    'One row. One column.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Resize the window: when the row no longer fits, '
+                    'all four controls move into a column.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    width: 600,
+                    padding: const EdgeInsets.all(16),
+                    color: Theme.of(context).colorScheme.surfaceContainer,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final boxWidth = math.min(
+                          _boxWidth,
+                          constraints.maxWidth,
+                        );
+                        return SingleAxisWrap(
+                          verticalCrossAxisAlignment: WrapCrossAlignment.center,
+                          horizontalAlignment: WrapAlignment.center,
+                          spacing: 8,
+                          children: [
+                            _buildBox(0, Colors.red.shade700, boxWidth),
+                            _buildBox(1, Colors.green.shade700, boxWidth),
+                            _buildBox(2, Colors.blue.shade700, boxWidth),
+                            _buildBox(3, Colors.purple.shade700, boxWidth),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildBox(Color color, String text, int index) {
-    final random = Random();
-    final showSwitch = random.nextBool();
-
+  Widget _buildBox(int index, Color color, double width) {
+    final controlIndex = index ~/ 2;
     return Container(
-      width: 100,
-      height: 60,
+      key: ValueKey('box-$index'),
+      width: width,
+      height: _boxHeight,
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Center(
-        child:
-            showSwitch
-                ? Row(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox(
+          width: _boxWidth,
+          height: _boxHeight,
+          child: index.isEven
+              ? Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Text(
-                      text,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                    IconButton(
+                      key: ValueKey('decrement-$controlIndex'),
+                      tooltip: 'Decrease counter ${controlIndex + 1}',
+                      icon: const Icon(Icons.remove, color: Colors.white),
+                      onPressed: () => setState(() {
+                        _counters[controlIndex] = math.max(
+                          0,
+                          _counters[controlIndex] - 1,
+                        );
+                      }),
+                    ),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${_counters[controlIndex]}',
+                          key: ValueKey('counter-$controlIndex'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                    Switch(
-                      value: switchValues[index],
-                      onChanged: (value) {
-                        setState(() {
-                          switchValues[index] = value;
-                        });
-                      },
-                      activeThumbColor:
-                          Colors.white, // Set the active color to white.
-                      thumbColor: WidgetStateProperty.resolveWith<Color>((
-                        Set<WidgetState> states,
-                      ) {
-                        if (states.contains(WidgetState.selected)) {
-                          return Colors
-                              .white; // Set thumb color to white when active
-                        }
-                        return Colors
-                            .grey; // Use the default color for other states
+                    IconButton(
+                      key: ValueKey('increment-$controlIndex'),
+                      tooltip: 'Increase counter ${controlIndex + 1}',
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      onPressed: () => setState(() {
+                        _counters[controlIndex]++;
                       }),
                     ),
                   ],
                 )
-                : Row(
+              : Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove, color: Colors.white),
-                      onPressed: () {
-                        setState(() {
-                          counters[index] = max(0, counters[index] - 1);
-                        });
-                      },
-                      constraints: const BoxConstraints(),
-                      // Remove extra padding
-                      padding: EdgeInsets.zero,
-                      splashRadius: 20, // Reduce splash radius if needed.
-                    ),
                     Text(
-                      '${counters[index]}',
+                      '${index + 1}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      onPressed: () {
-                        setState(() {
-                          counters[index]++;
-                        });
-                      },
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                      splashRadius: 20,
+                    Switch(
+                      key: ValueKey('switch-$controlIndex'),
+                      value: _switchValues[controlIndex],
+                      onChanged: (value) => setState(() {
+                        _switchValues[controlIndex] = value;
+                      }),
+                      activeThumbColor: Colors.white,
                     ),
                   ],
                 ),
+        ),
       ),
     );
   }
